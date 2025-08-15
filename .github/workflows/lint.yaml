@@ -1,0 +1,47 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-linters:
+    name: Run linters
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+          cache: 'pip'
+          cache-dependency-path: '**/requirements*.txt'
+      - name: Install Python (development) dependencies
+        run: |
+          pip install -r requirements-dev.txt
+      - name: Run ruff (linter)
+        run: |
+          ruff check dinov3
+      - name: Run ruff (formatter)
+        if: always()
+        run: |
+          ruff format --diff dinov3
+      - name: Report docstring coverage
+        if: always()
+        run: |
+          docstr-coverage dinov3
+      - name: Run mypy
+        if: always()
+        run: |
+          mypy --txt-report .
+          [ -f index.txt ] && cat index.txt
+      - name: Run pylint
+        if: always()
+        run: |
+          pylint --exit-zero dinov3
