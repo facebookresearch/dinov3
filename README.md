@@ -17,7 +17,7 @@ Reference PyTorch implementation and models for DINOv3. For details, see the **[
 
 ## Overview
 
-![market](https://github.com/user-attachments/assets/28e52028-1126-4628-a7ed-1829a63aec56)
+![market](assets/market.jpg)
 
 <div align="center">
   <i></em><b>High-resolution dense features.</b><br/>We visualize the cosine similarity maps obtained with DINOv3 output features<br/> between the patches marked with a red cross and all other patches.</i>
