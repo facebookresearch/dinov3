@@ -379,63 +379,22 @@ def build_multi_resolution_data_loader_from_cfg(
     return data_loader
 
 
-def do_train(cfg, model, resume=False):
-    process_subgroup = distributed.get_process_subgroup()
-    ckpt_dir = Path(cfg.train.output_dir, "ckpt").expanduser()
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-
-    model.train()
-    # Optimizer
-    optimizer = build_optimizer(cfg, model.get_params_groups())
-    (
-        lr_schedule,
-        wd_schedule,
-        momentum_schedule,
-        teacher_temp_schedule,
-        last_layer_lr_schedule,
-    ) = build_schedulers(cfg)
-    if cfg.multidistillation.enabled:
-        register_dont_save_hooks(
-            model,
-            dont_save=[k for k, _ in model.state_dict().items() if k.startswith("teacher")],
-        )
-    model.init_weights()
-    start_iter = 0
-    if resume and (last_checkpoint_dir := find_latest_checkpoint(ckpt_dir)):
-        logger.info(f"Checkpoint found {last_checkpoint_dir}")
-        start_iter = (
-            load_checkpoint(
-                last_checkpoint_dir,
-                model=model,
-                optimizer=optimizer,
-                strict_loading=False,
-                process_group=process_subgroup,
-            )
-            + 1
-        )
-    OFFICIAL_EPOCH_LENGTH = cfg.train.OFFICIAL_EPOCH_LENGTH
-    max_iter = cfg.optim.epochs * OFFICIAL_EPOCH_LENGTH
-    if cfg.multidistillation.enabled:
-        global_batch_size = cfg.multidistillation.global_batch_size
-    else:
-        global_batch_size = cfg.train.batch_size_per_gpu * distributed.get_world_size()
-
-    # Build data loader
-    data_loader = build_multi_resolution_data_loader_from_cfg(
-        cfg=cfg,
-        model=model,
-        start_iter=start_iter,
-    )
-
-    # Metric logging
-    logger.info("Starting training from iteration %d", start_iter)
-    metrics_file = os.path.join(cfg.train.output_dir, "training_metrics.json")
-    metric_logger = MetricLogger(delimiter="  ", output_file=metrics_file)
-    # Manual garbage collection
-    gc.disable()
-    gc.collect()
-
-    # Training loop
+def _training_loop(
+    cfg,
+    model,
+    optimizer,
+    lr_schedule,
+    wd_schedule,
+    momentum_schedule,
+    teacher_temp_schedule,
+    last_layer_lr_schedule,
+    data_loader,
+    metric_logger,
+    start_iter,
+    max_iter,
+    process_subgroup,
+    ckpt_dir,
+):
     student = model.student
     iteration = start_iter
     num_gram_updates = 0
@@ -446,11 +405,13 @@ def do_train(cfg, model, resume=False):
         and start_iter > 0
         and start_iter >= cfg.gram.it_first_update
     ):
-        # If `start_iter == it_first_update`, we have performed one gram teacher update after
-        # iteration `start_iter - 1`, except if we are starting training from scratch and `start_iter == 0`.
         num_gram_updates = math.ceil((start_iter + 1 - cfg.gram.it_first_update) / cfg.gram.update_frequency)
         logger.info(f"Gram was updated {num_gram_updates} times before iteration {start_iter}")
     consecutive_nan_count = 0
+    if cfg.multidistillation.enabled:
+        global_batch_size = cfg.multidistillation.global_batch_size
+    else:
+        global_batch_size = cfg.train.batch_size_per_gpu * distributed.get_world_size()
     for data in metric_logger.log_every(
         data_loader,
         print_freq=10,
@@ -463,7 +424,6 @@ def do_train(cfg, model, resume=False):
         if iteration > max_iter:
             return
 
-        # Garbage collection (trigger manually so it happens on all ranks at the same time)
         if (iteration + 1) % 150 == 0:
             logger.info("Garbage collection")
             gc.collect()
@@ -472,7 +432,6 @@ def do_train(cfg, model, resume=False):
             logger.info(f"Loading EMA teacher into Gram teacher before iteration {it}")
             model.gram_load_ema_teacher()
 
-        # Learning rates and other schedules
         lr = lr_schedule[it]
         wd = wd_schedule[it]
         mom = momentum_schedule[it]
@@ -480,11 +439,9 @@ def do_train(cfg, model, resume=False):
         last_layer_lr = last_layer_lr_schedule[it]
         apply_optim_scheduler(optimizer, lr, wd, last_layer_lr)
 
-        # Forward backward
         optimizer.zero_grad(set_to_none=True)
         total_loss, metrics_dict = model.forward_backward(data, teacher_temp=teacher_temp, iteration=it)
 
-        # Gradient clipping
         if cfg.optim.clip_grad:
             for k, v in student.items():
                 grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -497,7 +454,6 @@ def do_train(cfg, model, resume=False):
                     else grad_norm.item()
                 )
 
-        # Reduce total_loss to check for NaNs, reduce metrics for logging
         total_loss_all_ranks = total_loss.new_empty(distributed.get_subgroup_size())
         torch.distributed.all_gather_into_tensor(
             total_loss_all_ranks,
@@ -527,11 +483,9 @@ def do_train(cfg, model, resume=False):
                 raise RuntimeError(msg)
         else:
             consecutive_nan_count = 0
-        # Step optimizer
         optimizer.step()
         model.update_ema(mom)
 
-        # [GRAM] Update gram teacher when using gram teacher and frequent updates
         if (
             cfg.gram.use_loss
             and model.gram_rep_update
@@ -543,22 +497,18 @@ def do_train(cfg, model, resume=False):
             model.update_gram()
             num_gram_updates += 1
 
-        # Log metrics
         metric_logger.update(lr=lr)
         metric_logger.update(wd=wd)
         metric_logger.update(mom=mom)
         metric_logger.update(last_layer_lr=last_layer_lr)
         metric_logger.update(total_loss=total_loss, **metrics_dict)
 
-        # Submit evaluation jobs
         if (
             cfg.evaluation.eval_period_iterations > 0 and (iteration + 1) % cfg.evaluation.eval_period_iterations == 0
-            # and iteration != max_iter - 1
         ):
             do_test(cfg, model, f"training_{iteration}", process_group=process_subgroup)
             torch.cuda.synchronize()
 
-        # Checkpointing
         if (iteration + 1) % cfg.checkpointing.period == 0:
             torch.cuda.synchronize()
             save_checkpoint(
@@ -575,9 +525,77 @@ def do_train(cfg, model, resume=False):
                     keep_checkpoint_copy(ckpt_dir / str(iteration))
 
         iteration = iteration + 1
+
+
+def do_train(cfg, model, resume=False):
+    process_subgroup = distributed.get_process_subgroup()
+    ckpt_dir = Path(cfg.train.output_dir, "ckpt").expanduser()
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    model.train()
+    optimizer = build_optimizer(cfg, model.get_params_groups())
+    (
+        lr_schedule,
+        wd_schedule,
+        momentum_schedule,
+        teacher_temp_schedule,
+        last_layer_lr_schedule,
+    ) = build_schedulers(cfg)
+    if cfg.multidistillation.enabled:
+        register_dont_save_hooks(
+            model,
+            dont_save=[k for k, _ in model.state_dict().items() if k.startswith("teacher")],
+        )
+    model.init_weights()
+    start_iter = 0
+    if resume and (last_checkpoint_dir := find_latest_checkpoint(ckpt_dir)):
+        logger.info(f"Checkpoint found {last_checkpoint_dir}")
+        start_iter = (
+            load_checkpoint(
+                last_checkpoint_dir,
+                model=model,
+                optimizer=optimizer,
+                strict_loading=False,
+                process_group=process_subgroup,
+            )
+            + 1
+        )
+    OFFICIAL_EPOCH_LENGTH = cfg.train.OFFICIAL_EPOCH_LENGTH
+    max_iter = cfg.optim.epochs * OFFICIAL_EPOCH_LENGTH
+
+    data_loader = build_multi_resolution_data_loader_from_cfg(
+        cfg=cfg,
+        model=model,
+        start_iter=start_iter,
+    )
+
+    logger.info("Starting training from iteration %d", start_iter)
+    metrics_file = os.path.join(cfg.train.output_dir, "training_metrics.json")
+    metric_logger = MetricLogger(delimiter="  ", output_file=metrics_file)
+    gc.disable()
+    gc.collect()
+
+    _training_loop(
+        cfg=cfg,
+        model=model,
+        optimizer=optimizer,
+        lr_schedule=lr_schedule,
+        wd_schedule=wd_schedule,
+        momentum_schedule=momentum_schedule,
+        teacher_temp_schedule=teacher_temp_schedule,
+        last_layer_lr_schedule=last_layer_lr_schedule,
+        data_loader=data_loader,
+        metric_logger=metric_logger,
+        start_iter=start_iter,
+        max_iter=max_iter,
+        process_subgroup=process_subgroup,
+        ckpt_dir=ckpt_dir,
+    )
+
     metric_logger.synchronize_between_processes()
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+}
 
 
 def main(argv=None):
