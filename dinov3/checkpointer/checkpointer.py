@@ -270,7 +270,9 @@ def init_fsdp_model_from_checkpoint(
     checkpoint_path: str,
     skip_load_prefixes: List[str] | None = None,
     prefixes_not_sharded: List[str] | None = None,
+    suffixes_not_sharded: List[str] | None = None,
     process_group: dist.ProcessGroup = None,
+    load_strict=False,
 ):
     if not Path(checkpoint_path).is_dir():  # PyTorch standard checkpoint
         logger.info(f"Loading pretrained weights from {checkpoint_path}")
@@ -285,18 +287,33 @@ def init_fsdp_model_from_checkpoint(
             )
         else:
             world_mesh = DeviceMesh.from_group(process_group, "cuda")
-        chkpt = {
-            k: (
-                torch.distributed.tensor.distribute_tensor(v, world_mesh, src_data_rank=None)
-                if not k.startswith(pns)
-                else v
-            )
-            for pns in prefixes_not_sharded
-            for k, v in chkpt.items()
-        }
-        model.load_state_dict(
-            {k: v for k, v in chkpt.items() if not any(k.startswith(prefix) for prefix in skip_load_prefixes)}
-        )
+
+        distributed_chkpt = {}
+        for k, v in chkpt.items():
+            # if key matches any prefix that should NOT be sharded, keep original tensor
+            if any(k.startswith(p) for p in prefixes_not_sharded):
+                distributed_chkpt[k] = v
+                continue
+            elif any(k.endswith(s) for s in suffixes_not_sharded or []):
+                distributed_chkpt[k] = v
+                continue
+
+            # only attempt to distribute real tensors
+            if isinstance(v, torch.Tensor):
+                try:
+                    distributed_chkpt[k] = torch.distributed.tensor.distribute_tensor(
+                        v, world_mesh, src_data_rank=None
+                    )
+                except Exception:
+                    distributed_chkpt[k] = v  # fall back to original on error
+            else:
+                distributed_chkpt[k] = v
+
+        msg = (model.load_state_dict(
+            {k: v for k, v in distributed_chkpt.items() if not any(k.startswith(prefix) for prefix in skip_load_prefixes)}, strict=load_strict
+        ))
+        logger.info(f"Load model state dict message: {msg}")
+
     else:  # DCP checkpoint
         load_checkpoint(ckpt_dir=checkpoint_path, model=model, process_group=process_group)
 

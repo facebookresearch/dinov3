@@ -328,6 +328,7 @@ class SSLMetaArch(nn.Module):
                 self.cfg.student.resume_from_teacher_chkpt,
                 skip_load_prefixes=["dino_loss.center", "ibot_patch_loss.center"],
                 prefixes_not_sharded=["backbone.rope_embed.periods"],
+                suffixes_not_sharded=['qkv.bias_mask'],
                 process_group=distributed.get_process_subgroup(),
             )
             self.model_ema.load_state_dict(self.student.state_dict())
