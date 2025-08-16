@@ -86,7 +86,7 @@ class DataAugmentationDINO(object):
         if gram_teacher_crops_size is not None:
             # All resize transforms will do nothing if the crop size is already the desired size.
             if gram_teacher_no_distortions:
-                # When there a no distortions for the gram teacher crop, we can resize before the distortions.
+                # When there are no distortions for the gram teacher crop, we can resize before the distortions.
                 # This is the preferred order, because it keeps the image size for the augmentations consistent,
                 # which matters e.g. for GaussianBlur.
                 resize_global = transforms.Resize(
@@ -94,7 +94,7 @@ class DataAugmentationDINO(object):
                     interpolation=transforms.InterpolationMode.BICUBIC,
                 )
             else:
-                # When there a no distortions for the gram teacher crop, we need to resize after the distortions,
+                # When there are no distortions for the gram teacher crop, we need to resize after the distortions,
                 # because the distortions are shared between global and gram teacher crops.
                 self.resize_global_post_transf = transforms.Resize(
                     global_crops_size,
