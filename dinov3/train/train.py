@@ -359,7 +359,14 @@ def build_multi_resolution_data_loader_from_cfg(
     for increment, (global_crops_size_i, local_crops_size_i, gram_teacher_crops_size_i) in enumerate(
         zip(global_crops_sizes, local_crops_sizes, gram_teacher_crops_sizes)
     ):
-        cfg_i = copy.deepcopy(cfg)
+        cfg_i = type(cfg)()
+        cfg_i.crops = type(cfg.crops)()
+        cfg_i.train = type(cfg.train)()
+        for k, v in cfg.items():
+            if k not in ('crops', 'train'):
+                setattr(cfg_i, k, v)
+        for k, v in cfg.train.items():
+            setattr(cfg_i.train, k, v)
         cfg_i.crops.global_crops_size = global_crops_size_i
         cfg_i.crops.local_crops_size = local_crops_size_i
         cfg_i.crops.gram_teacher_crops_size = gram_teacher_crops_size_i
@@ -431,9 +438,7 @@ def do_train(cfg, model, resume=False):
     logger.info("Starting training from iteration %d", start_iter)
     metrics_file = os.path.join(cfg.train.output_dir, "training_metrics.json")
     metric_logger = MetricLogger(delimiter="  ", output_file=metrics_file)
-    # Manual garbage collection
-    gc.disable()
-    gc.collect()
+    
 
     # Training loop
     student = model.student
@@ -463,10 +468,7 @@ def do_train(cfg, model, resume=False):
         if iteration > max_iter:
             return
 
-        # Garbage collection (trigger manually so it happens on all ranks at the same time)
-        if (iteration + 1) % 150 == 0:
-            logger.info("Garbage collection")
-            gc.collect()
+        
 
         if cfg.gram.use_loss and model.gram_it_load_ema_teacher == it:
             logger.info(f"Loading EMA teacher into Gram teacher before iteration {it}")
