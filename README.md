@@ -241,15 +241,17 @@ For models using the LVD-1689M weights (pretrained on web images), please use th
 
 ```python
 import torchvision
+from torchvision.transforms import v2
 
 def make_transform(resize_size: int = 224):
-    to_tensor = transforms.ToTensor()
-    resize = transforms.Resize((resize_size, resize_size), antialias=True)
-    normalize = transforms.Normalize(
+    to_tensor = v2.ToImage()
+    resize = v2.Resize((resize_size, resize_size), antialias=True)
+    to_float = v2.ToDtype(torch.float32, scale=True)
+    normalize = v2.Normalize(
         mean=(0.485, 0.456, 0.406),
         std=(0.229, 0.224, 0.225),
     )
-    return transforms.Compose([to_tensor, resize, normalize])
+    return v2.Compose([to_tensor, resize, to_float, normalize])
 ```
 
 
@@ -258,15 +260,17 @@ For models using the SAT-493M weights (pretrained on satellite imagery), please 
 
 ```python
 import torchvision
+from torchvision.transforms import v2
 
 def make_transform(resize_size: int = 224):
-    to_tensor = transforms.ToTensor()
-    resize = transforms.Resize((resize_size, resize_size), antialias=True)
-    normalize = transforms.Normalize(
+    to_tensor = v2.ToImage()
+    resize = v2.Resize((resize_size, resize_size), antialias=True)
+    to_float = v2.ToDtype(torch.float32, scale=True)
+    normalize = v2.Normalize(
         mean=(0.430, 0.411, 0.296),
         std=(0.213, 0.156, 0.143),
     )
-    return transforms.Compose([to_tensor, resize, normalize])
+    return v2.Compose([to_tensor, resize, to_float, normalize])
 ```
 
 ### Pretrained heads - Image classification
@@ -332,7 +336,7 @@ Full example code of depther on an image
 ```python
 from PIL import Image
 import torch
-from torchvision import transforms
+from torchvision.transforms import v2
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 
@@ -343,13 +347,14 @@ def get_img():
     return image
 
 def make_transform(resize_size: int | list[int] = 768):
-    to_tensor = transforms.ToTensor()
-    resize = transforms.Resize((resize_size, resize_size), antialias=True)
-    normalize = transforms.Normalize(
+    to_tensor = v2.ToImage()
+    resize = v2.Resize((resize_size, resize_size), antialias=True)
+    to_float = v2.ToDtype(torch.float32, scale=True)
+    normalize = v2.Normalize(
         mean=(0.485, 0.456, 0.406),
         std=(0.229, 0.224, 0.225),
     )
-    return transforms.Compose([to_tensor, resize, normalize])
+    return v2.Compose([to_tensor, resize, to_float, normalize])
 
 depther = torch.hub.load(REPO_DIR, 'dinov3_vit7b16_dd', source="local", weights=<DEPTHER/CHECKPOINT/URL/OR/PATH>, backbone_weights=<BACKBONE/CHECKPOINT/URL/OR/PATH>)
 
@@ -445,13 +450,14 @@ def get_img():
     return image
 
 def make_transform(resize_size: int | list[int] = 768):
-    to_tensor = transforms.ToTensor()
-    resize = transforms.Resize((resize_size, resize_size), antialias=True)
-    normalize = transforms.Normalize(
+    to_tensor = v2.ToImage()
+    resize = v2.Resize((resize_size, resize_size), antialias=True)
+    to_float = v2.ToDtype(torch.float32, scale=True)
+    normalize = v2.Normalize(
         mean=(0.485, 0.456, 0.406),
         std=(0.229, 0.224, 0.225),
     )
-    return transforms.Compose([to_tensor, resize, normalize])
+    return v2.Compose([to_tensor, resize, to_float, normalize])
 
 segmentor = torch.hub.load(REPO_DIR, 'dinov3_vit7b16_ms', source="local", weights=<SEGMENTOR/CHECKPOINT/URL/OR/PATH>, backbone_weights=<BACKBONE/CHECKPOINT/URL/OR/PATH>)
 

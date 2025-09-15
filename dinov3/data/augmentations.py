@@ -6,8 +6,9 @@
 import logging
 
 import numpy as np
+import torch
 from torch import nn
-from torchvision import transforms
+from torchvision.transforms import v2
 
 from dinov3.data.transforms import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, GaussianBlur, make_normalize_transform
 
@@ -67,14 +68,14 @@ class DataAugmentationDINO(object):
         global_crop_max_size = max(global_crops_size, gram_teacher_crops_size if gram_teacher_crops_size else 0)
 
         # random resized crop and flip
-        self.geometric_augmentation_global = transforms.Compose(
+        self.geometric_augmentation_global = v2.Compose(
             [
-                transforms.RandomResizedCrop(
+                v2.RandomResizedCrop(
                     global_crop_max_size,
                     scale=global_crops_scale,
-                    interpolation=transforms.InterpolationMode.BICUBIC,
+                    interpolation=v2.InterpolationMode.BICUBIC,
                 ),
-                transforms.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
+                v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
             ]
         )
 
@@ -89,77 +90,78 @@ class DataAugmentationDINO(object):
                 # When there a no distortions for the gram teacher crop, we can resize before the distortions.
                 # This is the preferred order, because it keeps the image size for the augmentations consistent,
                 # which matters e.g. for GaussianBlur.
-                resize_global = transforms.Resize(
+                resize_global = v2.Resize(
                     global_crops_size,
-                    interpolation=transforms.InterpolationMode.BICUBIC,
+                    interpolation=v2.InterpolationMode.BICUBIC,
                 )
             else:
                 # When there a no distortions for the gram teacher crop, we need to resize after the distortions,
                 # because the distortions are shared between global and gram teacher crops.
-                self.resize_global_post_transf = transforms.Resize(
+                self.resize_global_post_transf = v2.Resize(
                     global_crops_size,
-                    interpolation=transforms.InterpolationMode.BICUBIC,
+                    interpolation=v2.InterpolationMode.BICUBIC,
                 )
 
-            self.resize_gram_teacher = transforms.Resize(
+            self.resize_gram_teacher = v2.Resize(
                 gram_teacher_crops_size,
-                interpolation=transforms.InterpolationMode.BICUBIC,
+                interpolation=v2.InterpolationMode.BICUBIC,
             )
 
-        self.geometric_augmentation_local = transforms.Compose(
+        self.geometric_augmentation_local = v2.Compose(
             [
-                transforms.RandomResizedCrop(
+                v2.RandomResizedCrop(
                     local_crops_size,
                     scale=local_crops_scale,
-                    interpolation=transforms.InterpolationMode.BICUBIC,
+                    interpolation=v2.InterpolationMode.BICUBIC,
                 ),
-                transforms.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
+                v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
             ]
         )
 
         # color distortions / blurring
-        color_jittering = transforms.Compose(
+        color_jittering = v2.Compose(
             [
-                transforms.RandomApply(
-                    [transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)],
+                v2.RandomApply(
+                    [v2.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)],
                     p=0.8,
                 ),
-                transforms.RandomGrayscale(p=0.2),
+                v2.RandomGrayscale(p=0.2),
             ]
         )
 
         global_transfo1_extra = GaussianBlur(p=1.0)
 
-        global_transfo2_extra = transforms.Compose(
+        global_transfo2_extra = v2.Compose(
             [
                 GaussianBlur(p=0.1),
-                transforms.RandomSolarize(threshold=128, p=0.2),
+                v2.RandomSolarize(threshold=128, p=0.2),
             ]
         )
 
         local_transfo_extra = GaussianBlur(p=0.5)
 
         # normalization
-        self.normalize = transforms.Compose(
+        self.normalize = v2.Compose(
             [
-                transforms.ToTensor(),
+                v2.ToImage(),
+                v2.ToDtype(torch.float32, scale=True),
                 make_normalize_transform(mean=mean, std=std),
             ]
         )
 
         if self.share_color_jitter:
             self.color_jittering = color_jittering
-            self.global_transfo1 = transforms.Compose([resize_global, global_transfo1_extra, self.normalize])
-            self.global_transfo2 = transforms.Compose([resize_global, global_transfo2_extra, self.normalize])
-            self.local_transfo = transforms.Compose([local_transfo_extra, self.normalize])
+            self.global_transfo1 = v2.Compose([resize_global, global_transfo1_extra, self.normalize])
+            self.global_transfo2 = v2.Compose([resize_global, global_transfo2_extra, self.normalize])
+            self.local_transfo = v2.Compose([local_transfo_extra, self.normalize])
         else:
-            self.global_transfo1 = transforms.Compose(
+            self.global_transfo1 = v2.Compose(
                 [resize_global, color_jittering, global_transfo1_extra, self.normalize]
             )
-            self.global_transfo2 = transforms.Compose(
+            self.global_transfo2 = v2.Compose(
                 [resize_global, color_jittering, global_transfo2_extra, self.normalize]
             )
-            self.local_transfo = transforms.Compose([color_jittering, local_transfo_extra, self.normalize])
+            self.local_transfo = v2.Compose([color_jittering, local_transfo_extra, self.normalize])
 
     def __call__(self, image):
         output = {}
