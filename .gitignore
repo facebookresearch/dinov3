@@ -16,3 +16,5 @@ dist/
 
 # Ignore vscode directory
 .vscode/
+
+.idea
