@@ -5,7 +5,7 @@ dist/
 
 **/.ipynb_checkpoints
 **/.ipynb_checkpoints/**
-
+output
 **/notebooks
 
 # Ignore shell scripts

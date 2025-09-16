@@ -7,7 +7,6 @@ from io import BytesIO
 from typing import Any
 
 from PIL import Image
-Image.MAX_IMAGE_PIXELS = None
 
 
 class Decoder:

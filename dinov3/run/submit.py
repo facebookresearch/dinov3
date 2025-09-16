@@ -192,7 +192,6 @@ def submit_jobs(class_to_submit, output_dir, submitit_args, name="fairvit"):
 def main():
     setup_logging(level=logging.INFO)
     args, script_args = get_run_parser().parse_known_args()
-    print(args)
     assert os.path.exists(args.module_path), "The module path does not exist"
 
     file_name = os.path.splitext(os.path.split(args.module_path)[1])[0]

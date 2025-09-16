@@ -586,14 +586,12 @@ def main(argv=None):
     else:
         args = get_args_parser().parse_args(argv[1:])
         args.output_dir = sys.argv[1]
-
     if args.multi_distillation:
         print("performing multidistillation run")
         cfg = setup_multidistillation(args)
         torch.distributed.barrier()
         logger.info("setup_multidistillation done")
         assert cfg.MODEL.META_ARCHITECTURE == "MultiDistillationMetaArch"
-
     else:
         setup_job(output_dir=args.output_dir, seed=args.seed)
         cfg = setup_config(args, strict_cfg=False)
@@ -622,7 +620,6 @@ def main(argv=None):
         ),
         recurse=True,
     )
-
     logger.info(f"Model after distributed:\n{model}")
     if args.eval_only:
         model.init_weights()
