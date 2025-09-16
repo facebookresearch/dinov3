@@ -1,3 +1,0 @@
-submitit INFO (2025-09-15 14:04:50,834) - Starting with JobEnvironment(job_id=5336, hostname=DESKTOP-UMTD44P, local_rank=4(8), node=0(1), global_rank=4(8))
-submitit INFO (2025-09-15 14:04:50,834) - Loading pickle: C:\Users\Usuario\PycharmProjects\dinov3\output\5336_submitted.pkl
-submitit ERROR (2025-09-15 14:04:51,932) - Submitted job triggered an exception
