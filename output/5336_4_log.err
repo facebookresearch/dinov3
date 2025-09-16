@@ -1,0 +1,18 @@
+submitit ERROR (2025-09-15 14:04:51,932) - Submitted job triggered an exception
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\Usuario\miniconda3\envs\dino\Lib\site-packages\submitit\core\_submit.py", line 11, in <module>
+    submitit_main()
+  File "C:\Users\Usuario\miniconda3\envs\dino\Lib\site-packages\submitit\core\submission.py", line 76, in submitit_main
+    process_job(args.folder)
+  File "C:\Users\Usuario\miniconda3\envs\dino\Lib\site-packages\submitit\core\submission.py", line 69, in process_job
+    raise error
+  File "C:\Users\Usuario\miniconda3\envs\dino\Lib\site-packages\submitit\core\submission.py", line 54, in process_job
+    env._handle_signals(paths, delayed)
+  File "C:\Users\Usuario\miniconda3\envs\dino\Lib\site-packages\submitit\core\job_environment.py", line 153, in _handle_signals
+    signal.signal(self._usr_sig(), handler.checkpoint_and_try_requeue)
+                  ^^^^^^^^^^^^^^^
+  File "C:\Users\Usuario\miniconda3\envs\dino\Lib\site-packages\submitit\core\job_environment.py", line 141, in _usr_sig
+    raise RuntimeError(
+RuntimeError: Unknown signal SIGUSR2, you may need to unset or update env var SUBMITIT_PREEMPT_SIGNAL (Eg: USR2)
