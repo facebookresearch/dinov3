@@ -90,14 +90,14 @@ def get_slurm_executor_parameters(
         "mem_gb": 0,  # Requests all memory on a node, see https://slurm.schedmd.com/sbatch.html
         "gpus_per_node": num_gpus_per_node,
         "tasks_per_node": num_gpus_per_node,  # one task per GPU
-        "cpus_per_task": 10,
+        # "cpus_per_task": 10,
         "nodes": nodes,
         "slurm_partition": get_slurm_partition(cluster_type),
     }
     # apply cluster-specific adjustments
     cluster_type = get_cluster_type(cluster_type)
-    if cluster_type == ClusterType.CW:
-        params["cpus_per_task"] = 16
+    #if cluster_type == ClusterType.CW:
+    #    params["cpus_per_task"] = 16
     # set additional parameters / apply overrides
     params.update(kwargs)
     return params

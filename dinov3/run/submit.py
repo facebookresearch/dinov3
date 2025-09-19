@@ -177,7 +177,7 @@ def submit_jobs(class_to_submit, output_dir, submitit_args, name="fairvit"):
         slurm_signal_delay_s=120,
         slurm_partition=submitit_args.slurm_partition,
         slurm_qos=submitit_args.slurm_qos,
-        # slurm_account=submitit_args.slurm_account,
+        slurm_account=submitit_args.slurm_account,
         slurm_additional_parameters=dict(nice=submitit_args.slurm_nice),
         **kwargs,
     )

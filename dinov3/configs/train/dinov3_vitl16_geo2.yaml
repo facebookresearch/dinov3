@@ -1,3 +1,7 @@
+# tested on RSC: /checkpoint/dino/qas/rope/vitl16_im1k/
+# gives 82.2 im1k-knn, 83.3 im1k-linear
+# runs with a total batch size of 2048 (64/gpu, 4 nodes here)
+# runs at 0.57s/iter
 MODEL:
   META_ARCHITECTURE: SSLMetaArch
   DEVICE: cuda
@@ -10,16 +14,15 @@ compute_precision:
 dino:
   loss_weight: 1.0
   global_ignore_diagonal: true
-  head_n_prototypes: 8192
-  head_bottleneck_dim: 512
+  head_n_prototypes: 2048
+  head_bottleneck_dim: 256
   head_norm_last_layer: false
   head_nlayers: 3
-  head_hidden_dim: 8192
+  head_hidden_dim: 2048
   koleo_loss_weight: 0.1
   koleo_loss_distributed: false
   koleo_topk: 1
   koleo_distributed_replicas: 0
-  koleo_distributed_loss_group_size: null
   force_weight_norm: false
 ibot:
   loss_weight: 1.0
@@ -30,17 +33,18 @@ ibot:
   mask_random_circular_shift: false
   force_masking_even_with_zero_weight: false
   separate_head: true
-  head_n_prototypes: 4096
-  head_bottleneck_dim: 384
+  head_n_prototypes: 2048
+  head_bottleneck_dim: 256
   head_norm_last_layer: false
   head_nlayers: 3
-  head_hidden_dim: 4096
+  head_hidden_dim: 2048
 gram:
   use_loss: false
   compute_stats: false
 train:
   batch_size_per_gpu: 8
-  dataset_path: null
+  dataset_path: ImageNet:split=TRAIN
+  output_dir: /checkpoint/dino/qas/rope/vitl16_im1k
   saveckp_freq: 20
   seed: 0
   num_workers: 10
@@ -52,7 +56,6 @@ train:
   learn_from_teacher_tokens: false
   centering: sinkhorn_knopp
   checkpointing: true
-  checkpointing_full: true
   compile: true
   cudagraphs: false
   cell_augmentation: false
@@ -75,7 +78,7 @@ student:
   reg_pos_embedding: false
   ffn_layer: mlp
   ffn_ratio: 4.0
-  resume_from_teacher_chkpt: <PATH/TO/HRFT/TEACHER>
+  resume_from_teacher_chkpt: <PATH/TO/HRFT>
   block_chunks: 0
   qkv_bias: true
   proj_bias: true
@@ -112,11 +115,11 @@ student:
   fp8_enabled: false
   fp8_filter: blocks
 teacher:
-  momentum_teacher: null
-  final_momentum_teacher: null
-  warmup_teacher_temp: null
-  teacher_temp: null
-  warmup_teacher_temp_epochs: null
+  momentum_teacher: 0.992
+  final_momentum_teacher: 1
+  warmup_teacher_temp: 0.04
+  teacher_temp: 0.07
+  warmup_teacher_temp_epochs: 30
   in_chans: 3
 distillation:
   enabled: false
@@ -128,7 +131,7 @@ hrft:
   enabled: false
   checkpoint_path: ''
 optim:
-  epochs: 10
+  epochs: 100
   optimizer: adamw
   weight_decay: 0.04
   weight_decay_end: 0.4
@@ -166,29 +169,13 @@ crops:
   - 0.229
   - 0.224
   - 0.225
+evaluation:
+  eval_period_iterations: 1000
+  low_freq_every: 5
+  config_files:
+    high_freq: benchmark_high_frequency.yaml
+    low_freq: benchmark_low_frequency.yaml
 checkpointing:
   period: 1000
   max_to_keep: 3
-  keep_every: 50000
-schedules:
-  lr:
-    start: 0
-    peak: 5.0e-05
-    end: 5.0e-05
-    warmup_epochs: 1
-    freeze_last_layer_epochs: 5
-  weight_decay:
-    start: 0.04
-    peak: 0.04
-    end: 0.04
-    warmup_epochs: 0
-  teacher_temp:
-    start: 0.04
-    peak: 0.07
-    end: 0.07
-    warmup_epochs: 1
-  momentum:
-    start: 0.994
-    peak: 0.994
-    end: 0.994
-    warmup_epochs: 0
+

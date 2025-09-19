@@ -272,6 +272,7 @@ def init_fsdp_model_from_checkpoint(
     keys_not_sharded: List[str] | None = None,
     process_group: dist.ProcessGroup = None,
 ):
+    print(model)
     if not Path(checkpoint_path).is_dir():  # PyTorch standard checkpoint
         logger.info(f"Loading pretrained weights from {checkpoint_path}")
         chkpt = torch.load(checkpoint_path, map_location="cpu")["teacher"]
@@ -293,13 +294,17 @@ def init_fsdp_model_from_checkpoint(
             )
             for key, tensor in chkpt.items()
         }
-        model.load_state_dict(
+        missing_keys, unexpected_keys = model.load_state_dict(
             {
                 key: tensor
                 for key, tensor in chkpt.items()
                 if not any(skip_load_key in key for skip_load_key in skip_load_keys)
-            }
+            }, 
+            strict=False
         )
+        print("MISSING KEYS", missing_keys)
+        print("UNEXPECTED KEYS", unexpected_keys)
+        
     else:  # DCP checkpoint
         load_checkpoint(ckpt_dir=checkpoint_path, model=model, process_group=process_group)
 

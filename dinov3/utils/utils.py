@@ -4,7 +4,7 @@
 # the terms of the DINOv3 License Agreement.
 
 import logging
-import os
+import os, sys
 import random
 import subprocess
 from typing import Callable, List, Optional, Tuple
@@ -12,6 +12,7 @@ from typing import Callable, List, Optional, Tuple
 import numpy as np
 import torch
 from torch import Tensor, nn
+
 
 logger = logging.getLogger("dinov3")
 
@@ -128,3 +129,15 @@ def has_batchnorms(model: nn.Module) -> bool:
         if isinstance(module, bn_types):
             return True
     return False
+
+def merge_checkpoints(dir):
+    from accelerate.utils.fsdp_utils import merge_fsdp_weights
+    merge_fsdp_weights(
+        checkpoint_dir=dir,
+        output_path=os.path.join(dir, "consolidated_model"),
+        safe_serialization=False,
+    )
+
+if __name__ == '__main__':
+    merge_checkpoints('/nethome/recpinfo/users/fibz/data/checkpoints/dinov3/ckpt/9999/')
+

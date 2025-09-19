@@ -23,7 +23,7 @@ def read_data(root: str, split: _Split) -> List[Dict]:
         id = sample['cd_guid']
         data[id] = {'id': id,
                     'captions': sample['descricao'],
-                    'image': os.path.abspath(os.path.join(root, 'images', f'{id}.jpg'))}
+                    'image': os.path.abspath(os.path.join(root, 'images', f'{id}.png'))}
     return list(data.values())
 
 

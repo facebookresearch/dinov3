@@ -607,6 +607,7 @@ def main(argv=None):
     if meta_arch is None:
         raise ValueError(f"Unknown MODEL.META_ARCHITECTURE {cfg.MODEL.META_ARCHITECTURE}")
     logger.info(f"Making meta arch {meta_arch.__name__}")
+    print(cfg.student)
     with torch.device("meta"):
         model = meta_arch(cfg)
     model.prepare_for_distributed_training()
