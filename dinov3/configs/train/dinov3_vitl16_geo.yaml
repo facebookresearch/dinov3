@@ -112,11 +112,11 @@ student:
   fp8_enabled: false
   fp8_filter: blocks
 teacher:
-  momentum_teacher: null
-  final_momentum_teacher: null
-  warmup_teacher_temp: null
-  teacher_temp: null
-  warmup_teacher_temp_epochs: null
+  momentum_teacher: 0.992
+  final_momentum_teacher: 1
+  warmup_teacher_temp: 0.04
+  teacher_temp: 0.07
+  warmup_teacher_temp_epochs: 1
   in_chans: 3
 distillation:
   enabled: false
@@ -128,12 +128,12 @@ hrft:
   enabled: false
   checkpoint_path: ''
 optim:
-  epochs: 10
+  epochs: 12
   optimizer: adamw
   weight_decay: 0.04
   weight_decay_end: 0.4
   lr: 0.0001
-  warmup_epochs: 10
+  warmup_epochs: 1
   min_lr: 1.0e-06
   clip_grad: 3.0
   freeze_last_layer_epochs: 1
@@ -171,12 +171,6 @@ checkpointing:
   max_to_keep: 3
   keep_every: 50000
 schedules:
-  lr:
-    start: 0
-    peak: 5.0e-05
-    end: 5.0e-05
-    warmup_epochs: 1
-    freeze_last_layer_epochs: 5
   weight_decay:
     start: 0.04
     peak: 0.04
@@ -186,9 +180,16 @@ schedules:
     start: 0.04
     peak: 0.07
     end: 0.07
-    warmup_epochs: 1
+    warmup_epochs: 0
+  lr:
+    start: 0
+    peak: 0
+    end: 5.0e-05
+    warmup_epochs: 0
+    freeze_last_layer_epochs: 0
+    cosine_epochs: 0
   momentum:
     start: 0.994
     peak: 0.994
-    end: 0.994
+    end: 1.0
     warmup_epochs: 0

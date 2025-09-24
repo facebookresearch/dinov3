@@ -5,7 +5,8 @@ dist/
 
 **/.ipynb_checkpoints
 **/.ipynb_checkpoints/**
-output
+output/
+logs/
 **/notebooks
 
 # Ignore shell scripts
@@ -13,8 +14,10 @@ output
 
 # Ignore swap files
 *.swp
-
 # Ignore vscode directory
 .vscode/
 
 .idea
+*.png
+*.json
+*.jpg

@@ -321,12 +321,16 @@ class DinoVisionTransformer(nn.Module):
         elif return_class_token and return_extra_tokens:
             return tuple(zip(outputs, class_tokens, extra_tokens))
 
-    def forward(self, *args, is_training: bool = False, **kwargs) -> List[Dict[str, Tensor]] | Tensor:
+    def forward(self, *args, is_training: bool = False, return_grid: bool = False, **kwargs) -> List[Dict[str, Tensor]] | Tensor:
         ret = self.forward_features(*args, **kwargs)
         if is_training:
             return ret
         else:
-            return self.head(ret["x_norm_clstoken"])
+            if return_grid:
+                return {'grid': ret['x_norm_patchtokens'], 'cls': self.head(ret["x_norm_clstoken"])}
+                
+            else:
+                return self.head(ret["x_norm_clstoken"])
 
 
 def vit_small(patch_size=16, **kwargs):
