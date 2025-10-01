@@ -137,7 +137,7 @@ if __name__ == '__main__':
     show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/HF_PCA.png')
     show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/HF_CLS.png')
 
-    # LOCAL MODEL
+    # LOCAL MODEL 
     weight_path = '/nethome/recpinfo/users/fibz/data/checkpoints/dinov3-2/ckpt/11999/consolidated_model/pytorch_model.bin'
     cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
     model = load_trained_model(cfg_path, weight_path)

@@ -4,13 +4,13 @@ MODEL:
   WEIGHTS: ''
   DTYPE: float32
 compute_precision:
-  param_dtype: fp32
+  param_dtype: bf16
   reduce_dtype: fp32
   sharding_strategy: SHARD_GRAD_OP
 dino:
   loss_weight: 1.0
   global_ignore_diagonal: true
-  head_n_prototypes: 8192
+  head_n_prototypes: 1024
   head_bottleneck_dim: 512
   head_norm_last_layer: false
   head_nlayers: 3
@@ -30,7 +30,7 @@ ibot:
   mask_random_circular_shift: false
   force_masking_even_with_zero_weight: false
   separate_head: true
-  head_n_prototypes: 4096
+  head_n_prototypes: 1024
   head_bottleneck_dim: 384
   head_norm_last_layer: false
   head_nlayers: 3
@@ -39,7 +39,7 @@ gram:
   use_loss: false
   compute_stats: false
 train:
-  batch_size_per_gpu: 8
+  batch_size_per_gpu: 64
   dataset_path: null
   saveckp_freq: 20
   seed: 0
@@ -133,11 +133,11 @@ optim:
   weight_decay: 0.04
   weight_decay_end: 0.4
   lr: 0.0001
-  warmup_epochs: 0
+  warmup_epochs: 2
   min_lr: 1.0e-06
   clip_grad: 3.0
   freeze_last_layer_epochs: 0
-  freeze_backbone_epochs: 1
+  freeze_backbone_epochs: 2
   scaling_rule: sqrt_wrt_1024
   patch_embed_lr_mult: 0.2
   dino_head_wd_multiplier: 1.0
@@ -155,7 +155,7 @@ crops:
   - 0.05
   - 0.32
   global_crops_size: 512
-  local_crops_size: 128
+  local_crops_size: 96
   localcrops_subset_of_globalcrops: false
   share_color_jitter: false
   horizontal_flips: true
@@ -183,12 +183,12 @@ schedules:
     end: 0.07
     warmup_epochs: 0
   lr:
-    start: 0
-    peak: 0
-    end: 5.0e-05
-    warmup_epochs: 0
+    start: 0.001 # start (float): Initial learning rate.
+    peak: 0.001 # peak (float): Learning rate after linear warmup.
+    end: 0.0001 # end (float): Final learning rate after cosine.
+    warmup_epochs: 2
     freeze_last_layer_epochs: 0
-    freeze_backbone_epochs: 1
+    freeze_backbone_epochs: 2
     cosine_epochs: 0
   momentum:
     start: 0.994

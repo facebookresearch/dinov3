@@ -87,10 +87,15 @@ def get_params_groups_with_decay(model, lr_decay_rate=1.0, patch_embed_lr_mult=1
             "is_last_layer": False,
             "lr_multiplier": decay_rate,
             "wd_multiplier": 1.0,
+            "is_backbone": True
         }
 
         if "dino_head" in name:
             d["wd_multiplier"] = dino_head_wd_multiplier
+            d["is_backbone"] = False
+        
+        if "ibot_head" in name:
+            d["is_backbone"] = False
 
         if "last_layer" in name:
             d["is_last_layer"] = True
@@ -108,7 +113,7 @@ def get_params_groups_with_decay(model, lr_decay_rate=1.0, patch_embed_lr_mult=1
     return all_param_groups
 
 
-def fuse_params_groups(all_params_groups, keys=("lr_multiplier", "wd_multiplier", "is_last_layer")):
+def fuse_params_groups(all_params_groups, keys=("lr_multiplier", "wd_multiplier", "is_last_layer", 'is_backbone')):
     fused_params_groups = defaultdict(lambda: {"params": []})
     for d in all_params_groups:
         identifier = ""
@@ -149,11 +154,16 @@ def get_params_groups_with_decay_fsdp(model, lr_decay_rate=1.0, patch_embed_lr_m
             "is_last_layer": False,
             "lr_multiplier": decay_rate,
             "wd_multiplier": 1.0,
+            "is_backbone": True
         }
 
         if "dino_head" in name:
             d["wd_multiplier"] = dino_head_wd_multiplier
-
+            d["is_backbone"] = False
+        
+        if 'ibot' in name:
+            d['is_backbone'] = False
+            
         if "last_layer" in name:
             d["is_last_layer"] = True
 

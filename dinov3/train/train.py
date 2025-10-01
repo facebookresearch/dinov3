@@ -138,8 +138,12 @@ def build_schedulers(cfg):
     momentum_schedule = CosineScheduler(**momentum)
     teacher_temp_schedule = CosineScheduler(**teacher_temp)
     last_layer_lr_schedule = CosineScheduler(**lr)
+    backbone_lr_schedule = CosineScheduler(**lr)
 
     last_layer_lr_schedule.schedule[: cfg.optim["freeze_last_layer_epochs"] * OFFICIAL_EPOCH_LENGTH] = (
+        0  # mimicking the original schedules
+    )
+    backbone_lr_schedule.schedule[: cfg.optim["freeze_backbone_epochs"] * OFFICIAL_EPOCH_LENGTH] = (
         0  # mimicking the original schedules
     )
     logger.info("Schedulers ready.")
@@ -149,6 +153,7 @@ def build_schedulers(cfg):
         momentum_schedule,
         teacher_temp_schedule,
         last_layer_lr_schedule,
+        backbone_lr_schedule
     )
 
 
@@ -186,7 +191,10 @@ def build_schedulers_v2(cfg):
         ),
     )
     last_layer_lr = lr.copy()
+    backbone_lr = lr.copy()
     last_layer_lr[: iter_per_epoch * cfg.schedules.lr.freeze_last_layer_epochs] = 0
+    backbone_lr[: iter_per_epoch * cfg.schedules.lr.freeze_backbone_epochs] = 0
+    
     weight_decay = linear_warmup_cosine_decay(
         start=cfg.schedules.weight_decay.start,
         peak=cfg.schedules.weight_decay.peak,
@@ -221,17 +229,21 @@ def build_schedulers_v2(cfg):
             else None
         ),
     )
-    return lr, weight_decay, momentum, teacher_temp, last_layer_lr
+    return lr, weight_decay, momentum, teacher_temp, last_layer_lr, backbone_lr
 
 
-def apply_optim_scheduler(optimizer, lr, wd, last_layer_lr):
+def apply_optim_scheduler(optimizer, lr, wd, last_layer_lr, backbone_lr):
     for param_group in optimizer.param_groups:
         is_last_layer = param_group["is_last_layer"]
         lr_multiplier = param_group["lr_multiplier"]
         wd_multiplier = param_group["wd_multiplier"]
+        is_backbone = param_group["is_backbone"]
+
         param_group["weight_decay"] = wd * wd_multiplier
         if is_last_layer:
             param_group["lr"] = last_layer_lr * lr_multiplier
+        elif is_backbone:
+            param_group["lr"] = backbone_lr * lr_multiplier
         else:
             param_group["lr"] = lr * lr_multiplier
 
@@ -393,6 +405,7 @@ def do_train(cfg, model, resume=False):
         momentum_schedule,
         teacher_temp_schedule,
         last_layer_lr_schedule,
+        backbone_lr_schedule
     ) = build_schedulers(cfg)
     if cfg.multidistillation.enabled:
         register_dont_save_hooks(
@@ -478,7 +491,8 @@ def do_train(cfg, model, resume=False):
         mom = momentum_schedule[it]
         teacher_temp = teacher_temp_schedule[it]
         last_layer_lr = last_layer_lr_schedule[it]
-        apply_optim_scheduler(optimizer, lr, wd, last_layer_lr)
+        backbone_lr = backbone_lr_schedule[it]
+        apply_optim_scheduler(optimizer, lr, wd, last_layer_lr, backbone_lr)
 
         # Forward backward
         optimizer.zero_grad(set_to_none=True)
@@ -496,7 +510,7 @@ def do_train(cfg, model, resume=False):
                     if isinstance(grad_norm, torch.distributed.tensor.DTensor)
                     else grad_norm.item()
                 )
-
+        
         # Reduce total_loss to check for NaNs, reduce metrics for logging
         total_loss_all_ranks = total_loss.new_empty(distributed.get_subgroup_size())
         torch.distributed.all_gather_into_tensor(
@@ -548,6 +562,7 @@ def do_train(cfg, model, resume=False):
         metric_logger.update(wd=wd)
         metric_logger.update(mom=mom)
         metric_logger.update(last_layer_lr=last_layer_lr)
+        metric_logger.update(backbone_lr=backbone_lr)
         metric_logger.update(total_loss=total_loss, **metrics_dict)
 
         # Submit evaluation jobs
@@ -623,6 +638,7 @@ def main(argv=None):
         ),
         recurse=True,
     )
+    
     logger.info(f"Model after distributed:\n{model}")
     if args.eval_only:
         model.init_weights()
@@ -633,6 +649,8 @@ def main(argv=None):
             + 1
         )
         return do_test(cfg, model, f"manual_{iteration}")
+    
+    # TODO : check if dino head weights != nan
     do_train(cfg, model, resume=not args.no_resume)
 
 

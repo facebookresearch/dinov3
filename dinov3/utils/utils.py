@@ -139,5 +139,5 @@ def merge_checkpoints(dir):
     )
 
 if __name__ == '__main__':
-    merge_checkpoints('/nethome/recpinfo/users/fibz/data/checkpoints/dinov3-2/ckpt/11999/')
+    merge_checkpoints('/nethome/recpinfo/users/fibz/data/checkpoints/dinov3-gaia2/ckpt/11999/')
 

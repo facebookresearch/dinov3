@@ -1,11 +1,9 @@
 import os, sys
 sys.path.append(os.path.normpath(os.path.join(__file__, '../../')))
 import torch
-from omegaconf import DictConfig, OmegaConf
 from dinov3.models.vision_transformer import DinoVisionTransformer
 from dinov3.layers.dino_head import DINOHead
-import torchvision.transforms.functional as TF
-
+from omegaconf import OmegaConf
 
 
 def load_trained_model(cfg_path, weight_path):
@@ -22,8 +20,8 @@ def load_trained_model(cfg_path, weight_path):
     for k, v in state['model'].items():
         if 'dino_head' in k or 'ibot_head' in k:
             pass
-        elif 'teacher' in k:
-            name = k.replace('teacher.backbone.', '')
+        elif 'student' in k:
+            name = k.replace('student.backbone.', '')
             new_state[name] = v
             
     model.load_state_dict(new_state)
