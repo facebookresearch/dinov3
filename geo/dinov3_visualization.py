@@ -143,11 +143,10 @@ if __name__ == '__main__':
     model = load_trained_model(cfg_path, weight_path)
 
     with torch.inference_mode():
-        outputs = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=True)
-        print(outputs.keys())
-        cls = outputs['cls'].to('cpu')
-        x = outputs['grid'].squeeze(0).to('cpu')
-    
+        x = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=True).squeeze(0).to('cpu')
+        cls = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=False).to('cpu')
+        
+        
     print('X', x.shape, 'CLS', cls.shape)
     show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_PCA.png')
     show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_CLS.png')

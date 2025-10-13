@@ -327,7 +327,7 @@ class DinoVisionTransformer(nn.Module):
             return ret
         else:
             if return_grid:
-                return {'grid': ret['x_norm_patchtokens'], 'cls': self.head(ret["x_norm_clstoken"])}
+                return ret['x_norm_patchtokens']
                 
             else:
                 return self.head(ret["x_norm_clstoken"])
