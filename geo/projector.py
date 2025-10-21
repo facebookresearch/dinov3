@@ -38,9 +38,6 @@ class Qwen2_5_VLPatchMerger(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        print(x.shape)
         x = self.ln_q(x).view(-1, self.hidden_size)
-        print(x.shape)
         x = self.mlp(x)
-        print(x.shape)
         return x

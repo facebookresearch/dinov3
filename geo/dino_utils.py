@@ -64,16 +64,18 @@ def load_dino_head(cfg_path, weight_path):
     return dino
 
 
-def resize_transform(mask_image: Image, image_size: int = 512, patch_size: int = 16,) -> torch.Tensor:
-    mean = (0.485, 0.456, 0.406)
-    std = (0.229, 0.224, 0.225)
+def resize_transform(mask_image: Image, image_size: int = 512, patch_size: int = 16) -> torch.Tensor:
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
+        w, h = mask_image.size
+        h_patches = int(image_size / patch_size)
+        w_patches = int((w * image_size) / (h * patch_size))
+        input = TF.to_tensor(TF.resize(mask_image, (h_patches * patch_size, w_patches * patch_size)))
+        input = TF.normalize(input, mean=mean, std=std)
+        
+        return input 
     
-    w, h = mask_image.size
-    h_patches = int(image_size / patch_size)
-    w_patches = int((w * image_size) / (h * patch_size))
-    input = TF.to_tensor(TF.resize(mask_image, (h_patches * patch_size, w_patches * patch_size)))
-    input = TF.normalize(input, mean=mean, std=std)
-    return input
 
 def preprocess(images: list, image_size: int)-> torch.Tensor:
     tensors = []

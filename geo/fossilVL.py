@@ -1,44 +1,43 @@
-import numpy as np
 import torch
 from transformers import AutoProcessor
-import abc
 import copy
 from PIL import Image
 import torchvision.transforms.functional as TF
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
-from encoder_utils import create_and_load_model, resize_transform
+from peft import LoraModel, LoraConfig, get_peft_model
+from dino_utils import create_and_load_model
 from projector import Qwen2_5_VLPatchMerger
 
 
 class FossilVL(torch.nn.Module):
-    def __init__(
-            self, 
-            decoder_name="Qwen/Qwen2.5-VL-3B-Instruct",
-            weight_path = '/nethome/recpinfo/users/fibz/data/checkpoints/dinov3/ckpt/9999/consolidated_model/pytorch_model.bin',
-            cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml',
-            pretrained_dino = None,
-
-            ):
+    def __init__(self, conf, ):
         super().__init__()
-        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(decoder_name, torch_dtype="auto", device_map="auto")
-        self.processor = AutoProcessor.from_pretrained(decoder_name, patch_size=16, ) #temporal_patch_size=1, merge_size=1)
-        self.patch_merger = Qwen2_5_VLPatchMerger(2048, 1024, 2)
+        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(conf.decoder.name, torch_dtype="auto", device_map="auto")
+        self.processor = AutoProcessor.from_pretrained(conf.decoder.name, patch_size=16, ) #temporal_patch_size=1, merge_size=1)
         self.im_start = 151644
         
-        # print(self.model)
-        
-        if pretrained_dino is None:
-            self.model.model.visual = create_and_load_model(cfg_path, weight_path)
-        else:
-            # TODO add option to load original DINO from HF 
-            raise(NotImplementedError, 'only local finetuned models are supported for now')
+        self.model.model.visual = create_and_load_model(conf.encoder.config_path, conf.encoder.weight_path)
+        encoder_dim = self.model.visual.patch_embed.proj.weight.shape[0]
+        decoder_dim = self.model.language_model.embed_tokens.weight.shape[1]
+        self.patch_merger = Qwen2_5_VLPatchMerger(decoder_dim, encoder_dim, 2)
+        self.image_dim = conf.encoder.dim
 
-   
-    def process_input(self, conversations: list, image_inputs: torch.Tensor):
+        if conf.decoder.apply_lora:
+            lora_config = LoraConfig(
+                r=conf.decoder.lora_rank, 
+                lora_alpha=conf.decoder.lora_alpha, 
+                target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj'], 
+                lora_dropout=0.1, 
+                bias="none", 
+                task_type="CAUSAL_LM"
+            )
+            self.model.language_model = get_peft_model(self.model.language_model, lora_config)
+
+    def process_input(self, conversations: list, image_inputs: torch.Tensor, add_gen: bool):
         texts = []
         for conversation in conversations:
-            texts.append(self.processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=False))
-        print(texts[-1])
+            texts.append(self.processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=add_gen))
+        # print(texts[-1])
         return self.processor(
             text=texts,
             images=image_inputs,
@@ -47,7 +46,26 @@ class FossilVL(torch.nn.Module):
             return_tensors="pt",
         )
 
+    def resize_transform(self, mask_image: Image, image_size: int = 512, patch_size: int = 16,) -> torch.Tensor:
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
         
+        w, h = mask_image.size
+        if w < h:
+            w_patches = int(image_size / patch_size)
+            h_patches = int((h * image_size) / (w * patch_size))
+            
+        else:
+            h_patches = int(image_size / patch_size)
+            w_patches = int((w * image_size) / (h * patch_size))
+        
+        input = TF.to_tensor(TF.resize(mask_image, (h_patches * patch_size, w_patches * patch_size)))
+        input = TF.normalize(input, mean=mean, std=std)
+        c, w, h = input.shape
+        center = (int(w / 2), int(h/2))
+        return input[:, 
+                     center[0]-int(image_size/2):center[0]+int(image_size/2), 
+                     center[1]-int(image_size/2):center[1]+int(image_size/2)]
     
     def preprocess_images(self, images: list, image_size):
         inputs = []
@@ -56,7 +74,7 @@ class FossilVL(torch.nn.Module):
             if type(image) == str:
                 image = Image.open(image).convert('RGB')
 
-            tensor = resize_transform(image, image_size=image_size)
+            tensor = self.resize_transform(image, image_size=image_size)
             inputs.append(tensor)
   
         inputs = torch.stack(inputs, dim=0)
@@ -76,9 +94,9 @@ class FossilVL(torch.nn.Module):
         return self.model.get_input_embeddings()
 
 
-    def merge_embeddings(self, vision_embeddings, text_embeddings, tokens):
+    def merge_embeddings(self, vision_embeddings, text_embeddings, input_ids):
         image_mask, _ = self.model.model.get_placeholder_mask(
-            tokens,
+            input_ids,
             inputs_embeds=text_embeddings,
             image_features=vision_embeddings,
         )
@@ -91,51 +109,59 @@ class FossilVL(torch.nn.Module):
         for input in inputs:
             for i in range(len(input) - 1, -1, -1):
                 if input[i] == self.im_start:
-                    input[:i] = -100
+                    input[:i+1] = -100
+                    break
         return inputs
         
 
-    def train_batch(self, batch,  image_size:int=512):
-        image_inputs = self.preprocess_images(batch['image'], image_size)
-        inputs = self.process_input(batch['conversation'], image_inputs)
-    
+    def forward(self, image, conversation,  image_size:int=512):
+        inputs = self.process_input(conversation, image, False)
         text_embeddings = self.get_input_embeddings()(inputs['input_ids'])
-        vision_embeddings = self.get_image_features(image_inputs, True, False)
+        vision_embeddings = self.get_image_features(image, True, False)
         input_embeds = self.merge_embeddings(vision_embeddings, text_embeddings, inputs['input_ids'])
         labels = self.labels_from_input(copy.deepcopy(inputs['input_ids']))
         
+        print('text_embeddings', text_embeddings.shape)
+        print('vision_embeddings', vision_embeddings.shape)
+        print('input_embeddings', input_embeds.shape)
+
         return self.model.forward(inputs_embeds=input_embeds, attention_mask=inputs['attention_mask'], labels=labels)
 
 
-if __name__ == '__main__': 
-    # default: Load the model on the available device(s)
-    from dataset import ConversationDataset
-    dataset = ConversationDataset('/nethome/atena_projetos/fibz/images', '/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_test.json')
-    loader = dataset.get_loader(2, False)
+    def generate(self, image, ):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": image,
+                    },
+                    {"type": "text", "text": "Descreva as características da rocha de acordo com a imagem microscópica."},
+                ],
+            }
+        ]
+        image_inputs = self.preprocess_images([image], self.image_dim)
+        inputs = self.process_input([messages], image_inputs, True)
+        
+        text_embeddings = self.get_input_embeddings()(inputs['input_ids'])
+        vision_embeddings = self.get_image_features(image_inputs, True, False)
+        input_embeds = self.merge_embeddings(vision_embeddings, text_embeddings, inputs['input_ids'])
+        
+        generated_ids = self.model.generate(
+            input_ids=inputs['input_ids'],
+            inputs_embeds=input_embeds,
+            attention_mask=inputs['attention_mask'],
+            max_new_tokens=128,
+        )
 
-    model = FossilVL()
-    
-    model.train_epoch(loader, optim, 512)
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        output_text = self.processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        return output_text
 
-    # print('input', input_embeds.shape)
 
-    # position_ids, rope_deltas = model.model.get_rope_index(input_ids=inputs['input_ids'], image_grid_thw=inputs['image_grid_thw'], attention_mask=inputs['attention_mask'])
-
-    # generated_ids = model.model.generate(
-    #     input_ids=inputs['input_ids'],
-    #     inputs_embeds=inputs_embeds,
-    #     attention_mask=inputs['attention_mask'],
-    #     # rope_deltas=rope_deltas,
-    #     # position_ids=position_ids,
-    #     max_new_tokens=128,
-    #     # pixel_values=inputs['pixel_values'],
-    #     # image_grid_thw=inputs['image_grid_thw']
-    # )
-
-    # generated_ids_trimmed = [
-    #     out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-    # ]
-    # output_text = processor.batch_decode(
-    #     generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-    # )
-    # print(output_text)
+        
