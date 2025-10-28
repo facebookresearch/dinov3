@@ -1,6 +1,6 @@
 from torch.optim import AdamW
 from dataset import ConversationDataset
-from fossilVL import FossilVL
+from geo.model.qwenVL import FossilVL
 from omegaconf import OmegaConf
 import argparse
 import torch

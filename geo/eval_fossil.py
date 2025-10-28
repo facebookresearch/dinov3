@@ -1,4 +1,4 @@
-from geo.model.fossilVL import FossilVL
+from geo.model.qwenVL import FossilVL
 from omegaconf import OmegaConf
 import os
 from dataset import ConversationDataset

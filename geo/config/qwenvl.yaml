@@ -2,13 +2,13 @@ encoder:
   name: 'Fossil'
   weight_path: '/nethome/recpinfo/users/fibz/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
   config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml' 
-  size: 512 # image size
+  size: 512
+  multi_modal: 'mapper' 
 decoder:
-  name: "Qwen/Qwen3-4B-Thinking-2507"
+  name: "Qwen/Qwen2.5-VL-3B-Instruct"
   lora_rank: 16
   lora_alpha : 32
   apply_lora: false  
-multimodal: 'mapper:20' # mapper, merger, projector,
 train:
   batch_size: 8
   stage1:

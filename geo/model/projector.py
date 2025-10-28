@@ -5,7 +5,6 @@ import torch
 code from transformers package https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/modeling_qwen2.py
 '''
 
-
 class Qwen2RMSNorm(nn.Module):
     def __init__(self, hidden_size, eps: float = 1e-6) -> None:
         """
@@ -43,15 +42,52 @@ class Qwen2_5_VLPatchMerger(nn.Module):
         return x
     
 class Mapper(nn.Module):
-    def __init__(self, ):
-        pass
+    def __init__(self, input_dim, output_dim, k):
+        super().__init__()
+        self.k = k
+        self.output_dim = output_dim
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, output_dim * k * 2),
+            nn.GELU(),
+            nn.Linear(output_dim * k * 2, output_dim * k),
+        )
 
     def forward(self, x):
-        pass
+        _x = self.mlp(x)
+        return _x.view(x.shape[0], self.k, self.output_dim)
+        
+
 
 class Projector(nn.Module):
-    def __init__(self, ):
-        pass
+    def __init__(self, input_dim, output_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, output_dim * 2),
+            nn.GELU(),
+            nn.Linear(output_dim * 2, output_dim),
+        )
 
     def forward(self, x):
-        pass
+        return self.mlp(x)
+
+
+def multimodal_factory(name, input_dim, output_dim):
+    name = name.split(':')
+    if name[0] == 'mapper':
+        return Mapper(input_dim, output_dim, int(name[1]))
+    if name[0] == 'projector':
+        return Projector(input_dim, output_dim)
+    if name[0] == 'merger':
+        return Qwen2_5_VLPatchMerger(output_dim, input_dim, int(name[1]))
+
+if __name__ == '__main__':
+    mapper = Mapper(768, 1024*5, 1024, 10)
+    x = torch.rand((8, 768))
+    x = mapper(x)
+    print(x.shape)
+
+    proj = Projector(768, 2048, 1024)
+    x = torch.rand((8, 64, 768))
+    x = proj(x)
+    print(x.shape)
+

@@ -32,6 +32,7 @@ class ConversationDataset(Dataset):
         for sample in batch:
             payload['image'].append(sample['image'])
             payload['conversation'].append(json.loads(sample['conversation']))
+            # print(sample['conversation'])
         return payload
             
 

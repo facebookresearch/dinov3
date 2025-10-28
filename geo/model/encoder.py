@@ -121,4 +121,6 @@ if __name__ == '__main__':
     for batch in test_loader:
         out = encoder.get_image_features(batch['image'], False, False)
         break
+
+    
     

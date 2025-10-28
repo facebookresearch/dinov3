@@ -5,20 +5,22 @@ from PIL import Image
 import torchvision.transforms.functional as TF
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from peft import LoraModel, LoraConfig, get_peft_model
-from dino_utils import create_and_load_model
-from projector import Qwen2_5_VLPatchMerger
+from geo.model.dino_utils import create_and_load_model
+from geo.model.projector import Qwen2_5_VLPatchMerger
 
 
 class FossilVL(torch.nn.Module):
     def __init__(self, conf, ):
         super().__init__()
-        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(conf.decoder.name, torch_dtype="auto", device_map="auto")
+        self.decoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(conf.decoder.name, torch_dtype="auto", device_map="auto")
         self.processor = AutoProcessor.from_pretrained(conf.decoder.name, patch_size=16, ) #temporal_patch_size=1, merge_size=1)
         self.im_start = 151644
         
-        self.model.model.visual = create_and_load_model(conf.encoder.config_path, conf.encoder.weight_path)
-        encoder_dim = self.model.visual.patch_embed.proj.weight.shape[0]
-        decoder_dim = self.model.language_model.embed_tokens.weight.shape[1]
+        self.encoder = create_and_load_model(conf.encoder.config_path, conf.encoder.weight_path)
+        encoder_dim = self.encoder.patch_embed.proj.weight.shape[0]
+        decoder_dim = self.decoder.language_model.embed_tokens.weight.shape[1]
+        
+        
         self.patch_merger = Qwen2_5_VLPatchMerger(decoder_dim, encoder_dim, 2)
         self.image_dim = conf.encoder.dim
 
