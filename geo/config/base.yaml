@@ -1,7 +1,9 @@
 encoder:
+  name: 'Fossil'
   weight_path: '/nethome/recpinfo/users/fibz/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
   config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml' 
-  dim: 512
+  size: 512
+  multi_modal: 'mapper' 
 decoder:
   name: "Qwen/Qwen2.5-VL-3B-Instruct"
   lora_rank: 16
@@ -10,11 +12,12 @@ decoder:
 train:
   batch_size: 8
   stage1:
-    # train the modal projection mlp only
+    # train the multi modal bridge only
     learning_rate: 0.001
     epochs: 2
   stage2:
     # end to end train
+    frozen_encoder: True
     learning_rate: 0.0001
     epochs: 8
 data:

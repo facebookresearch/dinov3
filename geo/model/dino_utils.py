@@ -1,5 +1,5 @@
 import os, sys
-sys.path.append(os.path.normpath(os.path.join(__file__, '../../')))
+sys.path.append(os.path.normpath(os.path.join(__file__, '../../../')))
 import torch
 from dinov3.models.vision_transformer import DinoVisionTransformer
 from dinov3.layers.dino_head import DINOHead
@@ -82,7 +82,7 @@ def preprocess(images: list, image_size: int)-> torch.Tensor:
     for image in images:
         im = Image.open(image).convert('RGB')
         tensors.append(resize_transform(im, image_size=image_size)[0])
-    return torch.stack(tensors, dim=0)
+    return tensors
 
 
 if __name__ == '__main__':

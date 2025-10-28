@@ -41,3 +41,17 @@ class Qwen2_5_VLPatchMerger(nn.Module):
         x = self.ln_q(x).view(-1, self.hidden_size)
         x = self.mlp(x)
         return x
+    
+class Mapper(nn.Module):
+    def __init__(self, ):
+        pass
+
+    def forward(self, x):
+        pass
+
+class Projector(nn.Module):
+    def __init__(self, ):
+        pass
+
+    def forward(self, x):
+        pass
