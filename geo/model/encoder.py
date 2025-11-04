@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 import sys
 import os
 from omegaconf import OmegaConf
-
+from torch.distributed.fsdp import fully_shard, FSDPModule
 
 class Encoder(ABC):
     @abstractmethod
@@ -14,14 +14,13 @@ class Encoder(ABC):
         pass
 
     @abstractmethod
-    def get_image_features(self, images: list, return_grid: bool, is_training: bool) -> torch.Tensor:
+    def get_image_tensors(self, images: list, return_grid: bool, ) -> torch.Tensor:
         '''
             preprocess and extract features of multiple images returning a list of tensors of 
             variables sizes
 
             images: list of paths or PIL Images
             return_grid: return patches embeddings if true, cls embedding otherwise
-            is_training: wheater or not to update gradients
             returns: torch.Tensor ready to forward
         '''
         pass
@@ -58,7 +57,23 @@ class Fossil(torch.nn.Module, Encoder):
         self.dim = self.model.patch_embed.proj.weight.shape[0]
         self.im_size = conf.encoder.size
 
-    
+    def fsdp(self, fsdp_kwargs):
+        for block in self.model.blocks:
+            # fully_shard(block.attn, **fsdp_kwargs)
+            # fully_shard(block.norm1, **fsdp_kwargs)
+            # fully_shard(block.norm2, **fsdp_kwargs)
+            # fully_shard(block.ls1, **fsdp_kwargs)
+            # fully_shard(block.ls2, **fsdp_kwargs)
+            # fully_shard(block.mlp, **fsdp_kwargs)
+            fully_shard(block, **fsdp_kwargs)
+
+        # fully_shard(self.model.patch_embed, **fsdp_kwargs)
+        # fully_shard(self.model.rope_embed, **fsdp_kwargs)
+        # fully_shard(self.model.norm, **fsdp_kwargs)
+        # fully_shard(self.model.head, **fsdp_kwargs)
+        # fully_shard(self.model, **fsdp_kwargs)
+        fully_shard(self, **fsdp_kwargs)
+
     def preprocess(self, mask_image: Image, image_size: int, crop_center: bool = True) -> torch.Tensor:
         mean = (0.485, 0.456, 0.406)
         std = (0.229, 0.224, 0.225)
@@ -88,7 +103,7 @@ class Fossil(torch.nn.Module, Encoder):
         return input
     
 
-    def get_image_features(self, images: list, return_grid: bool, is_training:bool):
+    def get_image_tensors(self, images: list,):
         inputs = []
         for image in images:
             if type(image) == str:
@@ -102,9 +117,12 @@ class Fossil(torch.nn.Module, Encoder):
         else:
             # batch size is 1
             inputs = inputs[0].unsqueeze(0)
-
-        output = self.model.forward(inputs, is_training=is_training, return_grid=return_grid)
-        print(output.shape)
+        # list(patch_embed.parameters())[0]
+        return inputs
+    
+    def forward(self, inputs, return_grid):
+        output = self.model.forward(inputs, return_grid=return_grid)
+        # print(output.shape)
         return output
 
 

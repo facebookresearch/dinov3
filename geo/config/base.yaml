@@ -4,22 +4,23 @@ encoder:
   config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml' 
   size: 512 # image size
 decoder:
-  name: "Qwen/Qwen3-4B-Thinking-2507"
+  # name: "Qwen/Qwen3-4B-Thinking-2507"
+  name: "Qwen/Qwen3-0.6B"
   lora_rank: 16
   lora_alpha : 32
-  apply_lora: false  
+  apply_lora: false
 multimodal: 'mapper:20' # mapper, merger, projector,
 train:
-  batch_size: 8
+  batch_size: 16
   stage1:
     # train the multi modal bridge only
     learning_rate: 0.001
-    epochs: 2
+    epochs: 1
   stage2:
     # end to end train
     frozen_encoder: True
-    learning_rate: 0.0001
-    epochs: 8
+    learning_rate: 0.0002
+    epochs: 1
 data:
   root: "/nethome/atena_projetos/fibz/images"
   train: "/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_train.json"

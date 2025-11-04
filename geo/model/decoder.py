@@ -5,8 +5,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import sys
 import os
 from omegaconf import OmegaConf
+from peft import LoraConfig, get_peft_model
+from torch.distributed.fsdp import fully_shard
 sys.path.append(os.path.normpath(os.path.join(__file__, '../../')))
 from dataset import ConversationDataset
+from torch.distributed.tensor import DeviceMesh, DTensor, Replicate, Shard
 
 
 class Decoder(ABC):
@@ -15,7 +18,7 @@ class Decoder(ABC):
         pass
 
     @abstractmethod
-    def get_embedding_layer(self, ):
+    def get_input_embeds(self, inputs):
         pass
     
     @abstractmethod
@@ -34,11 +37,15 @@ class Decoder(ABC):
     def generate(self, image, ):
         pass
 
+    @abstractmethod
+    def fsdp(self,):
+        pass
+
 def decoder_factory(conf):
-    supported_models = {'Qwen3': Qwen3}
-    if conf.decoder.name in supported_models.keys():
-        return supported_models[conf.decoder.name](conf) 
-    
+    if 'Qwen3' in conf.decoder.name:
+        return Qwen3(conf)
+    else:
+        ValueError(f'{conf.decoder.name} is not supported')
 
 class Qwen3(torch.nn.Module):
     def __init__(self, conf):
@@ -46,23 +53,61 @@ class Qwen3(torch.nn.Module):
         self.tokenizer = AutoTokenizer.from_pretrained(conf.decoder.name)
         self.model = AutoModelForCausalLM.from_pretrained(
             conf.decoder.name,
-            torch_dtype="auto",
-            device_map="auto"
+            dtype="auto",
+            device_map="cpu"
         )
         self.dim = self.model.model.embed_tokens.weight.shape[1]
+        self.peft = False
 
+        if conf.decoder.apply_lora:
+            lora_config = LoraConfig(
+                r=conf.decoder.lora_rank,
+                lora_alpha=conf.decoder.lora_alpha,
+                target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            self.model = get_peft_model(self.model, lora_config)
+            self.peft = True
 
-    def get_embedding_layer(self, ):
-        return self.model.get_input_embeddings()
+    def fsdp(self, fsdp_kwargs):
+        print(self)
+        for block in self.model.model.layers:
+            # fully_shard(block.self_attn, **fsdp_kwargs)
+            # fully_shard(block.mlp, **fsdp_kwargs)
+            # fully_shard(block.input_layernorm, **fsdp_kwargs)
+            # fully_shard(block.post_attention_layernorm, **fsdp_kwargs)
+            fully_shard(block, **fsdp_kwargs)
+            
+        # fully_shard(self.model.model.norm, **fsdp_kwargs)
+        # fully_shard(self.model.model.rotary_emb, **fsdp_kwargs)
+        # fully_shard(self.model.model.embed_tokens, **fsdp_kwargs)
+        # fully_shard(self.model.model, **fsdp_kwargs)
+        # fully_shard(self.model.lm_head, **fsdp_kwargs)
+        # fully_shard(self.model, **fsdp_kwargs)
+        # fully_shard(self, **fsdp_kwargs)
+          
 
+    def get_input_embeds(self, inputs):
+        rank = os.environ["LOCAL_RANK"]
+        # mesh = DeviceMesh("cuda", torch.arange(4))
+        # inputs_ = DTensor.from_local(inputs, mesh).to(inputs.device)
+
+        # print(f'inputs device {inputs.device} on rank {rank} type {type(inputs)}')
+        if self.peft:
+            return self.model.base_model.model.model.embed_tokens(inputs)
+        
+        # embeddings = self.model.get_input_embeddings().to(inputs.device)
+        # return embeddings(inputs)
+        return self.model.model.embed_tokens(inputs)
+        
     def merge_inputs(self, vision_embeddings, text_embeddings, input_ids):
         padding = 151643
-        # print(vision_embeddings.shape)
-        # print(text_embeddings.shape)
-        # embeddings merge
+        
         first_part = text_embeddings[:, :4, :]
         second_part = text_embeddings[:, 4:, :]
-        embeddings = torch.concat((first_part, vision_embeddings, second_part), dim=1)
+
+        embeddings = torch.concat((first_part, vision_embeddings , second_part), dim=1)
         
         # generation start
         think_end = 151668
@@ -77,7 +122,6 @@ class Qwen3(torch.nn.Module):
         labels[:, split + vision_embeddings.shape[1]:] = input_ids[:, split:]
         labels[labels == padding] = -100
         labels = labels.to(dtype=torch.long)
-
         attention_mask = torch.ones_like(labels)
         
         return {
@@ -98,11 +142,19 @@ class Qwen3(torch.nn.Module):
         for text in texts:
             vl_text.append(text.replace('<|im_start|>user', 
                                         '<|im_start|>user\n<|vision_start|><|vision_end|>'))
-        inputs = self.tokenizer(vl_text, return_tensors="pt", padding=True).to(self.model.device)
+        inputs = self.tokenizer(vl_text, return_tensors="pt", padding=True)
         # print(inputs)
         return inputs['input_ids']
         
     def forward(self, inputs ):
+        # if "LOCAL_RANK" not in os.environ.keys():
+        #     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        # else:
+        #     index = torch.accelerator.current_device_index()
+        #     device = f'cuda:{index}'
+        # print(self.model.device, device, inputs['input_embeddings'].device)
+        
         return self.model.forward(
             inputs_embeds=inputs['input_embeddings'], 
             labels=inputs['labels'], 
@@ -116,7 +168,7 @@ class Qwen3(torch.nn.Module):
         ]
         inputs = self.prepare_inputs([messages], add_gen_prompt=True)
         # print(inputs.shape)
-        text_embeddings = self.get_embedding_layer()(inputs)
+        text_embeddings = self.get_input_embeds(inputs)
         model_inputs = self.merge_inputs(image_embeddings, text_embeddings, inputs)
 
         generated_ids = self.model.generate(
@@ -142,14 +194,22 @@ class Qwen3(torch.nn.Module):
 
 
 if __name__ == '__main__':
+    from torch.distributed.fsdp import MixedPrecisionPolicy
     sys.path.append(os.path.normpath(os.path.join(__file__, '../../')))
     from dataset import ConversationDataset
     
     conf = OmegaConf.load('geo/config/base.yaml')
     model = Qwen3(conf)
-
-    test_dataset = ConversationDataset(conf.data.root, conf.data.test)
-    test_loader = test_dataset.get_loader(conf.train.batch_size, True)
+    fsdp_kwargs = {
+        "mp_policy": MixedPrecisionPolicy(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.float32,
+        )
+    }
+    model.fsdp(fsdp_kwargs)
+    print(model)
+    # test_dataset = ConversationDataset(conf.data.root, conf.data.test)
+    # test_loader = test_dataset.get_loader(conf.train.batch_size, True)
     
     # for batch in test_loader:
     #     input = model.prepare_inputs(batch['conversation'])
@@ -161,5 +221,5 @@ if __name__ == '__main__':
     #     break
 
 
-    output = model.generate(torch.rand((1, 64, model.dim)), 'descreva a imagem')
-    print(output['response'])
+    # output = model.generate(torch.rand((1, 64, model.dim)), 'descreva a imagem')
+    # print(output['response'])

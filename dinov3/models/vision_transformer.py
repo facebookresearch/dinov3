@@ -6,11 +6,10 @@
 import logging
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
-
+import os
 import torch
 import torch.nn.init
 from torch import Tensor, nn
-
 from dinov3.layers import LayerScale, Mlp, PatchEmbed, RMSNorm, RopePositionEmbedding, SelfAttentionBlock, SwiGLUFFN
 from dinov3.utils import named_apply
 
@@ -208,6 +207,31 @@ class DinoVisionTransformer(nn.Module):
                 device=cls_token.device,
             )
 
+        # tokens = []
+        # for _ in range(B):
+        #     tokens.append(cls_token.view(1, 1024))
+        # tokens = torch.stack(tokens)
+        
+        # storage = []
+        # for _ in range(B):
+        #     storage.append(storage_tokens.view((4, 1024)))
+        # storage = torch.stack(storage)
+
+        # if "LOCAL_RANK" in os.environ.keys():
+        #     tokens = tokens.to_local()
+        #     storage = storage.to_local()
+            # x = DTensor.from_local(x, mesh)
+                
+        # x = torch.cat(
+        #     [
+        #         tokens,
+        #         storage,
+        #         x,
+        #     ],
+        #     dim=1,
+        # )
+
+        # expand operation is not working with dtensor
         x = torch.cat(
             [
                 cls_token.expand(B, -1, -1),

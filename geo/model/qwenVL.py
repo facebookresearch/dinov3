@@ -9,7 +9,7 @@ from geo.model.dino_utils import create_and_load_model
 from geo.model.projector import Qwen2_5_VLPatchMerger
 
 
-class FossilVL(torch.nn.Module):
+class FossilVLAlpha(torch.nn.Module):
     def __init__(self, conf, ):
         super().__init__()
         self.decoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(conf.decoder.name, torch_dtype="auto", device_map="auto")

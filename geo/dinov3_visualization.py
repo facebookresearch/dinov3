@@ -32,7 +32,7 @@ import torch
 import torchvision.transforms.functional as TF
 from sklearn.decomposition import PCA
 from scipy import signal
-from load_model import load_trained_model
+from model.dino_utils import create_and_load_model
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -138,9 +138,9 @@ if __name__ == '__main__':
     show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/HF_CLS.png')
 
     # LOCAL MODEL 
-    weight_path = '/nethome/recpinfo/users/fibz/data/checkpoints/dinov3-2/ckpt/11999/consolidated_model/pytorch_model.bin'
+    weight_path = '/nethome/recpinfo/users/fibz/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
     cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
-    model = load_trained_model(cfg_path, weight_path)
+    model = create_and_load_model(cfg_path, weight_path)
 
     with torch.inference_mode():
         x = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=True).squeeze(0).to('cpu')
