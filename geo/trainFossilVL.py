@@ -12,29 +12,42 @@ from torch.distributed.checkpoint.state_dict import get_model_state_dict, set_mo
 from torch.distributed.checkpoint.state_dict import StateDictOptions
 
 
-def train_epoch(model, optim, loader, device):
+def train_epoch(model, optim, loader, device): 
+    bar = not torch.accelerator.is_available() or torch.cuda.current_device() == 0
+    if bar:
+        pbar = tqdm(total=len(loader), desc=f"Rank {rank} Progress")
+
     epoch_loss = []
-    for batch in tqdm(loader, desc='training'):
+    for batch in loader:
         # print(batch.keys())
         output = model(batch, device)
         output.loss.backward()
         optim.step()
         optim.zero_grad()
-
+            
         epoch_loss.append(output.loss.detach().cpu().item())
         print('loss', output.loss)
-
+        if bar:
+            pbar.update(1)
+        
     return sum(epoch_loss)/len(epoch_loss)
 
 
 def val_epoch(model, loader, device):
     epoch_loss = []
-    for batch in tqdm(loader, desc='validation'):
+    bar = device == 'cpu' or device.split(':')[-1] == '0'
+    if bar:
+        pbar = tqdm(total=len(loader), desc=f"Rank {rank} Progress")
+    
+    for batch in loader:
         with torch.no_grad():
             output = model(batch, device)
             epoch_loss.append(output.loss.detach().cpu().item())
             print('loss', output.loss)
-
+    
+        if bar:
+            pbar.update(1)
+    
     return sum(epoch_loss)/len(epoch_loss)
 
 
@@ -76,8 +89,8 @@ if __name__ == '__main__':
     if "LOCAL_RANK" in os.environ.keys():
         # using torchrun multi gpu
         model.fsdp(fsdp_kwargs)
-    else:
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # else:
+    #     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     
     model.decoder = model.decoder.to(device)
     model = model.to(device)
@@ -89,7 +102,8 @@ if __name__ == '__main__':
     # STAGE 1
     model.encoder.requires_grad = False
     model.decoder.requires_grad = False
-        
+
+
     for i in range(conf.train.stage1.epochs):
         train_loss = train_epoch(model, optim, train_loader, device)
         val_loss = val_epoch(model, test_loader, device)
@@ -109,7 +123,7 @@ if __name__ == '__main__':
         log['training loss'].append(train_loss)
         log['validation loss'].append(val_loss)
 
-    # os.makedirs(conf.save_path, exist_ok=True)
+    os.makedirs(conf.save_path, exist_ok=True)
     with open(os.path.join(conf.save_path, 'log.json'), 'w') as f:
         json.dump(log, f, indent=2) 
 

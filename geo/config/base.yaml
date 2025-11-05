@@ -8,21 +8,21 @@ decoder:
   name: "Qwen/Qwen3-0.6B"
   lora_rank: 16
   lora_alpha : 32
-  apply_lora: false
+  apply_lora: True
 multimodal: 'mapper:20' # mapper, merger, projector,
 train:
   batch_size: 16
   stage1:
     # train the multi modal bridge only
     learning_rate: 0.001
-    epochs: 1
+    epochs: 2
   stage2:
     # end to end train
     frozen_encoder: True
     learning_rate: 0.0002
-    epochs: 1
+    epochs: 3
 data:
   root: "/nethome/atena_projetos/fibz/images"
   train: "/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_train.json"
   test: "/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_test.json"
-save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil_vl_"
+save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil_vl"

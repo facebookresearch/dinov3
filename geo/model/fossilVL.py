@@ -31,8 +31,9 @@ class FossilVL(torch.nn.Module):
         
         return self.decoder(model_inputs)
     
-    def generate(self, image, prompt):
-        image_embeddings = self.encoder.get_image_features([image], self.use_grid)
+    def generate(self, image, prompt, device):
+        image_tensors = self.encoder.get_image_tensors(image).to(device)
+        image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
         image_embeddings = self.projection(image_embeddings)
         return self.decoder.generate(image_embeddings, prompt)
     

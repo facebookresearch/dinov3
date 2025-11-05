@@ -71,36 +71,20 @@ class Qwen3(torch.nn.Module):
             self.peft = True
 
     def fsdp(self, fsdp_kwargs):
-        print(self)
-        for block in self.model.model.layers:
-            # fully_shard(block.self_attn, **fsdp_kwargs)
-            # fully_shard(block.mlp, **fsdp_kwargs)
-            # fully_shard(block.input_layernorm, **fsdp_kwargs)
-            # fully_shard(block.post_attention_layernorm, **fsdp_kwargs)
-            fully_shard(block, **fsdp_kwargs)
-            
-        # fully_shard(self.model.model.norm, **fsdp_kwargs)
-        # fully_shard(self.model.model.rotary_emb, **fsdp_kwargs)
-        # fully_shard(self.model.model.embed_tokens, **fsdp_kwargs)
-        # fully_shard(self.model.model, **fsdp_kwargs)
-        # fully_shard(self.model.lm_head, **fsdp_kwargs)
-        # fully_shard(self.model, **fsdp_kwargs)
-        # fully_shard(self, **fsdp_kwargs)
+        if not self.peft:
+            for block in self.model.model.layers:
+                fully_shard(block, **fsdp_kwargs)
+        else:
+            for block in self.model.base_model.model.model.layers:
+                fully_shard(block, **fsdp_kwargs)
           
 
     def get_input_embeds(self, inputs):
-        rank = os.environ["LOCAL_RANK"]
-        # mesh = DeviceMesh("cuda", torch.arange(4))
-        # inputs_ = DTensor.from_local(inputs, mesh).to(inputs.device)
-
-        # print(f'inputs device {inputs.device} on rank {rank} type {type(inputs)}')
         if self.peft:
             return self.model.base_model.model.model.embed_tokens(inputs)
         
-        # embeddings = self.model.get_input_embeddings().to(inputs.device)
-        # return embeddings(inputs)
         return self.model.model.embed_tokens(inputs)
-        
+
     def merge_inputs(self, vision_embeddings, text_embeddings, input_ids):
         padding = 151643
         
@@ -125,19 +109,28 @@ class Qwen3(torch.nn.Module):
         attention_mask = torch.ones_like(labels)
         
         return {
-            'input_embeddings': embeddings.to(self.model.device, dtype=self.model.dtype),
-            'attention_mask' : attention_mask.to(self.model.device),    
-            'labels': labels.to(self.model.device),
+            'input_embeddings': embeddings,
+            'attention_mask' : attention_mask,    
+            'labels': labels,
 
             }
+        # return {
+        #     'input_embeddings': embeddings.to(self.model.device, dtype=self.model.dtype),
+        #     'attention_mask' : attention_mask.to(self.model.device),    
+        #     'labels': labels.to(self.model.device),
+
+        #     }
+
+
 
     def prepare_inputs(self, conversations, add_gen_prompt=False):
         texts = self.tokenizer.apply_chat_template(
             conversations,
             tokenize=False,
-            add_generation_prompt=False,
+            add_generation_prompt=add_gen_prompt,
             enable_thinking=False, 
         )
+        # print(texts)
         vl_text = []
         for text in texts:
             vl_text.append(text.replace('<|im_start|>user', 
@@ -178,7 +171,7 @@ class Qwen3(torch.nn.Module):
 
         )
         output_ids = generated_ids[0][len(inputs[0]):].tolist() 
-        print(output_ids)
+        # print(output_ids)
         # parsing thinking content
         try:
             # rindex finding 151668 (</think>)
