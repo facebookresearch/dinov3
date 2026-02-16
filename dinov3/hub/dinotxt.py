@@ -72,7 +72,7 @@ def dinov3_vitl16_dinotxt_tet1280d20h24l(
         if type(weights) is DINOTxtWeights and weights == DINOTxtWeights.LVTD2300M:
             url = f"{DINOV3_BASE_URL}/dinov3_vitl16/dinov3_vitl16_dinotxt_vision_head_and_text_encoder-a442d8f5.pth"
         elif type(weights) is DINOTxtWeights and weights != DINOTxtWeights.LVTD2300M:
-            raise AssertionError(f"Unsuported weights for DINOTxt: {weights}")
+            raise AssertionError(f"Unsupported weights for DINOTxt: {weights}")
         else:
             url = convert_path_or_url_to_url(weights)
         vision_head_and_text_encoder_state_dict = torch.hub.load_state_dict_from_url(url, check_hash=check_hash)
