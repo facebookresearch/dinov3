@@ -1,6 +1,8 @@
-🆕 [2025-11-20] Distillation configurations for ConvNeXt backbones are now released!
+🆕 [2025-11-20] Distillation code and configurations for ConvNeXt backbones are now released!
 
-🆕 [2025-09-17] :fire: DINOv3 backbones are now supported by the [PyTorch Image Models / timm](https://github.com/huggingface/pytorch-image-models/) library starting with version [1.0.20](https://github.com/huggingface/pytorch-image-models/releases/tag/v1.0.20)
+🆕 [2025-10-13] [Semantic segmentation](https://github.com/facebookresearch/dinov3?tab=readme-ov-file#linear-segmentation-with-data-augmentation-on-ade20k) (ADE20K) and [monocular depth estimation](https://github.com/facebookresearch/dinov3?tab=readme-ov-file#linear-depth-estimation-on-nyuv2-depth) (NYUv2-Depth) linear probing code are now released!
+
+[2025-09-17] DINOv3 backbones are now supported by the [PyTorch Image Models / timm](https://github.com/huggingface/pytorch-image-models/) library starting with version [1.0.20](https://github.com/huggingface/pytorch-image-models/releases/tag/v1.0.20)
 
 [2025-08-29] DINOv3 backbones are [supported](https://huggingface.co/docs/transformers/model_doc/dinov3) by released versions of the Hugging Face [Transformers](https://huggingface.co/docs/transformers/index) library starting with version [4.56.0](https://github.com/huggingface/transformers/releases/tag/v4.56.0)
 
@@ -411,20 +413,6 @@ output_dir=<PATH/TO/OUTPUT/DIR>
 - One can also save prediction results using `result_config.save_results=true`.
 
 
-#### Linear depth estimation on NYUv2 Depth
-```shell
-PYTHONPATH=. python -m dinov3.run.submit dinov3/eval/depth/run.py \
-    model.dino_hub=dinov3_vit7b16 \
-    config=dinov3/eval/depth/configs/config-nyu.yaml \
-    datasets.root=<PATH/TO/DATASET> \
-    --output-dir <PATH/TO/OUTPUT/DIR>
-```
-
-After the job completes, you will find in the output path directory you specified
-- `depth_config.yaml` that contains the config you trained the model with;
-- `model_final.pth`, the final linear head checkpoint at the end of training; and
-- `results-depth.csv` with the final metrics.
-
 ### Pretrained heads - Detector trained on COCO2017 dataset
 
 <table style="margin: auto">
@@ -772,6 +760,21 @@ After the job completes, you will find in the output path directory you specifie
 - `segmentation_config.yaml` that contains the config you trained the model with;
 - `model_final.pth`, the final linear head checkpoint at the end of training; and
 - `results-semantic-segmentation.csv` with the final metrics.
+
+
+#### Linear depth estimation on NYUv2 Depth
+```shell
+PYTHONPATH=. python -m dinov3.run.submit dinov3/eval/depth/run.py \
+    model.dino_hub=dinov3_vit7b16 \
+    config=dinov3/eval/depth/configs/config-nyu.yaml \
+    datasets.root=<PATH/TO/DATASET> \
+    --output-dir <PATH/TO/OUTPUT/DIR>
+```
+
+After the job completes, you will find in the output path directory you specified
+- `depth_config.yaml` that contains the config you trained the model with;
+- `model_final.pth`, the final linear head checkpoint at the end of training; and
+- `results-depth.csv` with the final metrics.
 
 ### Text alignment on DINOv3 using dino.txt
 
