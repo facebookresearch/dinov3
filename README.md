@@ -1,3 +1,5 @@
+🆕 [2025-11-20] Distillation configurations for ConvNeXt backbones are now released!
+
 🆕 [2025-09-17] :fire: DINOv3 backbones are now supported by the [PyTorch Image Models / timm](https://github.com/huggingface/pytorch-image-models/) library starting with version [1.0.20](https://github.com/huggingface/pytorch-image-models/releases/tag/v1.0.20)
 
 [2025-08-29] DINOv3 backbones are [supported](https://huggingface.co/docs/transformers/model_doc/dinov3) by released versions of the Hugging Face [Transformers](https://huggingface.co/docs/transformers/index) library starting with version [4.56.0](https://github.com/huggingface/transformers/releases/tag/v4.56.0)
@@ -197,7 +199,7 @@ image = load_image(url)
 
 feature_extractor = pipeline(
     model="facebook/dinov3-convnext-tiny-pretrain-lvd1689m",
-    task="image-feature-extraction", 
+    task="image-feature-extraction",
 )
 features = feature_extractor(image)
 ```
@@ -213,8 +215,8 @@ image = load_image(url)
 pretrained_model_name = "facebook/dinov3-convnext-tiny-pretrain-lvd1689m"
 processor = AutoImageProcessor.from_pretrained(pretrained_model_name)
 model = AutoModel.from_pretrained(
-    pretrained_model_name, 
-    device_map="auto", 
+    pretrained_model_name,
+    device_map="auto",
 )
 
 inputs = processor(images=image, return_tensors="pt").to(model.device)
@@ -523,7 +525,7 @@ transform = make_transform(img_size)
 with torch.inference_mode():
     with torch.autocast('cuda', dtype=torch.bfloat16):
         batch_img = transform(img)[None]
-        pred_vit7b = segmentor(batch_img)  # raw predictions  
+        pred_vit7b = segmentor(batch_img)  # raw predictions
         # actual segmentation map
         segmentation_map_vit7b = make_inference(
             batch_img,
@@ -689,7 +691,7 @@ PYTHONPATH=${PWD} python -m dinov3.run.submit dinov3/train/train.py \
   --config-file dinov3/configs/train/dinov3_vit7b16_gram_anchor.yaml \
   --output-dir <PATH/TO/OUTPUT/DIR> \
   train.dataset_path=<DATASET>:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET> \
-  gram.ckpt=<PATH/TO/GRAM_TEACHER_FROM_PREVIOUS_STEP>   
+  gram.ckpt=<PATH/TO/GRAM_TEACHER_FROM_PREVIOUS_STEP>
 ```
 
 #### High-resolution adaptation
@@ -705,7 +707,7 @@ PYTHONPATH=${PWD} python -m dinov3.run.submit dinov3/train/train.py \
   student.resume_from_teacher_chkpt=<PATH/TO/TEACHER_FROM_GRAM>
 ```
 
-## Multi-distillation 
+## Multi-distillation
 
 ### Test setup:
 
@@ -778,13 +780,13 @@ Text alignment can be done following the method from `dino.txt` aka [DINOv2 Meet
 ```shell
 PYTHONPATH=${PWD} python -m dinov3.run.submit dinov3/eval/text/train_dinotxt.py \
    --nodes 4 \
-  # An example config for text alignment is here: dinov3/eval/text/configs/dinov3_vitl_text.yaml \ 
+  # An example config for text alignment is here: dinov3/eval/text/configs/dinov3_vitl_text.yaml \
   trainer_config_file="<PATH/TO/DINOv3/TEXT/CONFIG>" \
   output-dir=<PATH/TO/OUTPUT/DIR>
 ```
 Launching the above trains text alignment on 4 nodes with 8 gpus each (32 gpus in total).
 Please note that the text alignment model in the DINOv3 paper was trained on a private dataset and here we have given an example config in ```dinov3/eval/text/configs/dinov3_vitl_text.yaml``` using ```CocoCaptions``` dataset for illustration purposes.
-Please adapt the provided ```CocoCaptions``` dataset class, the dataset can be found [here](https://www.kaggle.com/datasets/nikhil7280/coco-image-caption)  
+Please adapt the provided ```CocoCaptions``` dataset class, the dataset can be found [here](https://www.kaggle.com/datasets/nikhil7280/coco-image-caption)
 
 ## License
 
