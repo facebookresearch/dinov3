@@ -78,7 +78,7 @@ train:
   checkpointing_full: false  # aggressive checkpointing
   compile: true
   cudagraphs: false
-  fsdp_reshard_after_forward: true
+  fsdp_reshard_after_forward: true  # If false, params are unsharded before fwd and only resharded after bwd (same as 'SHARD_GRAD_OP' in FSDP1). If true, standard full sharding applies.
   sharded_eval_checkpoint: false
   cache_dataset: false
 student:
