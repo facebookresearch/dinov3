@@ -40,9 +40,6 @@ class SSLMetaArch(nn.Module):
         assert cfg.ibot.separate_head is True
         assert cfg.train.centering == "sinkhorn_knopp"
 
-        # For some reason FULL_SHARD doesn't work
-        assert cfg.compute_precision.sharding_strategy == "SHARD_GRAD_OP"
-
         self.cfg = cfg
 
         student_model_dict = dict()

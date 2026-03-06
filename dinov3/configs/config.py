@@ -21,6 +21,26 @@ from dinov3.utils import fix_random_seeds, get_conda_env, get_sha
 logger = logging.getLogger("dinov3")
 
 
+def _warn_deprecated_sharding_strategy(*cfgs: DictConfig) -> None:
+    found_deprecated_key = False
+    for cfg in cfgs:
+        # We check for 'compute_precision' block presence
+        if not OmegaConf.is_config(cfg) or "compute_precision" not in cfg:
+            continue
+        # Then check for 'compute_precision.sharding_strategy'
+        compute_precision_cfg = cfg.compute_precision
+        if not OmegaConf.is_config(compute_precision_cfg) or "sharding_strategy" not in compute_precision_cfg:
+            continue
+        # Delete it
+        del compute_precision_cfg["sharding_strategy"]
+        found_deprecated_key = True
+    if found_deprecated_key:
+        logger.warning(
+            "`compute_precision.sharding_strategy` is deprecated and ignored. "
+            "Use `train.fsdp_reshard_after_forward` instead."
+        )
+
+
 @dataclass
 class DinoV3SetupArgs:
     config_file: str
@@ -78,6 +98,7 @@ def get_cfg_from_args(args: DinoV3SetupArgs, multidistillation=False, strict=Tru
 
     # Command line overrides
     opts_cfg = OmegaConf.from_cli(overrides)
+    _warn_deprecated_sharding_strategy(cfg, opts_cfg)
 
     if multidistillation:
         cfg = OmegaConf.merge(cfg, opts_cfg)
@@ -123,6 +144,8 @@ def setup_multidistillation(args: DinoV3SetupArgs):
     os.makedirs(args.output_dir, exist_ok=True)
     # get config file for this rank
     base_cfg = OmegaConf.load(args.config_file)
+    _warn_deprecated_sharding_strategy(base_cfg)
+
     assert base_cfg.multidistillation.enabled
 
     global_batch_size = base_cfg.multidistillation.global_batch_size
@@ -157,7 +180,10 @@ def setup_multidistillation(args: DinoV3SetupArgs):
     args.config_file = os.path.abspath(config_path)
     default_cfg = get_default_config()
     cfg = OmegaConf.load(args.config_file)
-    cfg = OmegaConf.merge(default_cfg, cfg, base_cfg, OmegaConf.from_cli(args.opts))
+    opts_cfg = OmegaConf.from_cli(args.opts)
+    _warn_deprecated_sharding_strategy(cfg, base_cfg, opts_cfg)
+
+    cfg = OmegaConf.merge(default_cfg, cfg, base_cfg, opts_cfg)
 
     global logger
     setup_logging(output=args.output_dir, level=logging.INFO)
