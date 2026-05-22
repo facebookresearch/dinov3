@@ -110,6 +110,8 @@ class ImageNet22k(ExtendedVisionDataset):
         super().__init__(root, transforms, transform, target_transform)
         self._extra_root = extra
 
+        self._root = root
+
         entries_path = self._get_entries_path(root)
         self._entries = self._load_extra(entries_path)
 
@@ -138,7 +140,7 @@ class ImageNet22k(ExtendedVisionDataset):
         return sorted(class_ids)
 
     def _load_entries_class_ids(self, root: Optional[str] = None) -> Tuple[List[_Entry], List[str]]:
-        root = root if root is not None else self.root
+        root = root if root is not None else self._root
         entries: List[_Entry] = []
         class_ids = self._find_class_ids(root)
 
