@@ -138,7 +138,7 @@ class ImageNet22k(ExtendedVisionDataset):
         return sorted(class_ids)
 
     def _load_entries_class_ids(self, root: Optional[str] = None) -> Tuple[List[_Entry], List[str]]:
-        root = self.get_root(root)
+        root = root if root is not None else self.root
         entries: List[_Entry] = []
         class_ids = self._find_class_ids(root)
 
