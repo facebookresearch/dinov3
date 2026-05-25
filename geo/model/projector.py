@@ -41,6 +41,7 @@ class Qwen2_5_VLPatchMerger(nn.Module):
         x = self.mlp(x)
         return x
     
+
 class Mapper(nn.Module):
     def __init__(self, input_dim, output_dim, k):
         super().__init__()
@@ -57,7 +58,6 @@ class Mapper(nn.Module):
         return _x.view(x.shape[0], self.k, self.output_dim)
         
 
-
 class Projector(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
@@ -71,6 +71,27 @@ class Projector(nn.Module):
         return self.mlp(x)
 
 
+class QueryExtractor(nn.Module):
+    def __init__(self, input_dim, output_dim, k):
+        super().__init__()
+        self.attention = nn.MultiheadAttention(input_dim, 8, batch_first=True)
+        self.queries = nn.Parameter(torch.randn(k, input_dim))
+        self.proj = nn.Linear(input_dim, output_dim)
+        self.norm = nn.LayerNorm(input_dim)
+        
+
+    def forward(self, x, return_weights=False):
+        b = x.shape[0]
+        q = self.queries.unsqueeze(0).expand(b, -1, -1)
+        attn_scores, attn_weights = self.attention(query=q, key=x, value=x)
+        x = self.norm(attn_scores)
+        x = self.proj(x)
+    
+        if return_weights:
+            return x, attn_weights
+        
+        return x
+
 def multimodal_factory(name, input_dim, output_dim):
     name = name.split(':')
     if name[0] == 'mapper':
@@ -79,15 +100,16 @@ def multimodal_factory(name, input_dim, output_dim):
         return Projector(input_dim, output_dim)
     if name[0] == 'merger':
         return Qwen2_5_VLPatchMerger(output_dim, input_dim, int(name[1]))
+    if name[0] == 'attention':
+        return QueryExtractor(input_dim, output_dim, int(name[1]))
+
 
 if __name__ == '__main__':
-    mapper = Mapper(768, 1024*5, 1024, 10)
-    x = torch.rand((8, 768))
-    x = mapper(x)
-    print(x.shape)
+    x = torch.rand((32, 128, 768))
+    ext = QueryExtractor(768, 1024, 16)
+      
+    print(ext(x).shape)
 
-    proj = Projector(768, 2048, 1024)
-    x = torch.rand((8, 64, 768))
-    x = proj(x)
-    print(x.shape)
-
+    map = Mapper(768, 1024, 16)
+    x = torch.randn((32, 768))
+    print(map(x).shape)

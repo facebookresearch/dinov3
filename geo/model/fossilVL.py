@@ -19,23 +19,32 @@ class FossilVL(torch.nn.Module):
         self.use_grid = False if 'mapper' in conf.multimodal else True
         self.encoder
 
-    def forward(self, batch, device):
-        image_tensors = self.encoder.get_image_tensors(batch['image'], ).to(device)
+    def forward(self, batch):
+        image_tensors = self.encoder.get_image_tensors(batch['image'], )
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
         image_embeddings = self.projection(image_embeddings)
-        
-        inputs = self.decoder.prepare_inputs(batch['conversation']).to(device)
-        
+
+        inputs = self.decoder.prepare_inputs(batch['conversation'])
+
         text_embeddings = self.decoder.get_input_embeds(inputs)
         model_inputs = self.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
-        
+
         return self.decoder(model_inputs)
     
-    def generate(self, image, prompt, device):
+    def generate(self, image, prompt, num_beams=10, do_sample=False):
+        device = self.decoder.model.device
         image_tensors = self.encoder.get_image_tensors(image).to(device)
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
         image_embeddings = self.projection(image_embeddings)
-        return self.decoder.generate(image_embeddings, prompt)
+
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+       
+        inputs = self.decoder.prepare_inputs([messages], add_gen_prompt=True).to(device)
+        text_embeddings = self.decoder.get_input_embeds(inputs)
+        model_inputs = self.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
+        return self.decoder.generate(model_inputs, num_beams=num_beams, do_sample=do_sample)
     
     def fsdp(self, fsdp_kwargs):
         self.decoder.fsdp(fsdp_kwargs)

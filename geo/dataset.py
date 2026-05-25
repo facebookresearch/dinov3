@@ -14,7 +14,14 @@ class ConversationDataset(Dataset):
             self.image = []
             self.conversation = []
             for sample in data:
-                self.image.append(os.path.join(self.root, '{}.png'.format(sample['cd_guid'])))
+                if 'cd_guid' in sample:
+                    self.image.append(os.path.join(self.root, '{}.png'.format(sample['cd_guid'])))
+                
+                elif 'image_name' in sample:
+                    self.image.append(os.path.join(self.root, sample['image_name'].replace('\\', '/')))
+                else:
+                    raise ValueError('there is no image in the dataset')
+
                 self.conversation.append(json.dumps(sample['conversation']))
 
     def __getitem__(self, index):
@@ -40,13 +47,9 @@ class ConversationDataset(Dataset):
         '''
         get torch dataloader
         :param batch_size: batch size for the dataloader
-        :return: dataloader, indices
+        :return: dataloader
         '''
-        indices = np.arange(len(self.image))
-        if shuffle:
-            np.random.shuffle(indices)
-        sampler = torch.utils.data.SequentialSampler(indices)
-        return torch.utils.data.DataLoader(self, batch_size=batch_size, sampler=sampler, collate_fn=self.colate__fn)
+        return torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=shuffle, collate_fn=self.colate__fn)
     
 
 

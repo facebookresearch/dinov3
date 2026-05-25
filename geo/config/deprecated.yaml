@@ -8,7 +8,8 @@ decoder:
   name: "Qwen/Qwen2.5-VL-3B-Instruct"
   lora_rank: 16
   lora_alpha : 32
-  apply_lora: false  
+  apply_lora: false
+  load_weights: false  
 train:
   batch_size: 8
   stage1:

@@ -1,0 +1,31 @@
+encoder:
+  name: 'CLIP' 
+  weight_path: 'ViT-L/14'
+  config_path: '/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/NWPU-CLIP-large14-LoRA-Seed-batch512-t5/config.yaml' 
+  size: 224 # image size
+decoder:
+  # name: "Qwen/Qwen3-4B-Thinking-2507"
+  # name: Qwen/Qwen3-0.6B
+  name: meta-llama/Llama-3.2-1B-Instruct
+  lora_rank: 16 
+  lora_alpha : 32
+  apply_lora: False
+multimodal: 'mapper:20'  # mapper, merger, projector,
+train:
+  batch_size: 8
+  stage1:
+    # train the multi modal bridge only
+    learning_rate: 0.001
+    epochs: 1
+  stage2:
+    # end to end train
+    frozen_encoder: True
+    learning_rate: 0.0002
+    epochs: 4
+data:
+  root: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/images"
+  train: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_train_all.json"
+  test: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_val_all.json"
+save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/CLIP_bs512_t5-llama_1B-mapper"
+
+# "facebook/dinov3-vitl16-pretrain-lvd1689m"

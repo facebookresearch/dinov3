@@ -19,7 +19,7 @@ Let's start by loading some pre-requisites and checking the DINOv3 repository lo
 import pickle
 import os
 import urllib
-
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -29,10 +29,10 @@ from torchao.quantization import Int4WeightOnlyConfig
 from transformers.image_utils import load_image
 
 import torch
-import torchvision.transforms.functional as TF
 from sklearn.decomposition import PCA
 from scipy import signal
 from model.dino_utils import create_and_load_model
+import torchvision.transforms.functional as TF
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -118,35 +118,49 @@ def show_clssim(x, cls, image, save_name):
 
 if __name__ == '__main__':
     # HF MODEL
+    # dino = "facebook/dinov3-vitl16-pretrain-lvd1689m"
+    dino = "facebook/dinov3-vitl16-pretrain-sat493m" 
     model = AutoModel.from_pretrained(
-        "facebook/dinov3-vitl16-pretrain-lvd1689m",
+        dino,
         device_map="auto",
     )
-    id = '9A63BE35027C5531E05351EB1D0A24CD'
-    image = Image.open(f'/nethome/atena_projetos/fibz/data/Dataset/images/{id}.png')
+
+    # id = '28D9A30CCB4350A2E0636202980A1BEC'
+    # image = Image.open(f'/nethome/atena_projetos/fibz/data/Dataset/images/{id}.png')
+
+    nwpu = json.load(open("/nethome/recpinfo/users/fibz/data/dataset/nwpu/val.json", "r"))
+    i = 420
+    image_name = nwpu[i]['image_name']
+    image = Image.open(f'/nethome/recpinfo/users/fibz/data/dataset/nwpu/images/{image_name.replace('\\', '/')}')
     image_tensor = resize_transform(image)
-    os.makedirs(f'/nethome/recpinfo/users/fibz/data/visualize/{id}', exist_ok=True)
+  
+    os.makedirs(f'/nethome/recpinfo/users/fibz/data/visualize/nwpu_val_im{i}', exist_ok=True)
     with torch.inference_mode():
         feats = model(image_tensor.unsqueeze(0).to("cpu"))
         x = feats.last_hidden_state[0, 5:, :]
-        cls = feats.pooler_output
         x = x.to('cpu')
-        cls = cls.to('cpu')
-    
-    print('X', x.shape, 'CLS', cls.shape)
-    show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/HF_PCA.png')
-    show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/HF_CLS.png')
-
-    # LOCAL MODEL 
-    weight_path = '/nethome/recpinfo/users/fibz/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
-    cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
-    model = create_and_load_model(cfg_path, weight_path)
-
-    with torch.inference_mode():
-        x = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=True).squeeze(0).to('cpu')
-        cls = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=False).to('cpu')
+        show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/nwpu_val_im{i}/HF_PCA.png')
         
+        for j in range(5):
+            cls = feats.last_hidden_state[0, j, :]
+            cls = cls.to('cpu')
+            sufix = 'CLS' if j == 0 else f'REG{j}'
+
+            print('X', x.shape, 'CLS', cls.shape)
+            show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/nwpu_val_im{i}/HF_{sufix}.png')
+            
+
+    # LOCAL MODEL
+    # Create and load locally trained model with custom heads 
+    # weight_path = '/nethome/recpinfo/users/fibz/data/checkpoint/dino/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
+    # cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
+    # model = create_and_load_model(cfg_path, weight_path)
+
+    # with torch.inference_mode():
+    #     x = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=True).squeeze(0).to('cpu')
+    #     cls = model.forward(image_tensor.unsqueeze(0).to("cpu"), is_training=False, return_grid=False).to('cpu')
+    #     # TODO: add option to return registers to model.foward() 
         
-    print('X', x.shape, 'CLS', cls.shape)
-    show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_PCA.png')
-    show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_CLS.png')
+    # print('X', x.shape, 'CLS', cls.shape)
+    # show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_PCA.png')
+    # show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_CLS.png')
