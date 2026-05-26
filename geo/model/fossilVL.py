@@ -31,7 +31,7 @@ class FossilVL(torch.nn.Module):
 
         return self.decoder(model_inputs)
     
-    def generate(self, image, prompt, num_beams=10, do_sample=False):
+    def generate(self, image, prompt, num_beams=10, do_sample=False, max_new_tokens=100, **kwargs):
         device = self.decoder.model.device
         image_tensors = self.encoder.get_image_tensors(image).to(device)
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
@@ -44,7 +44,7 @@ class FossilVL(torch.nn.Module):
         inputs = self.decoder.prepare_inputs([messages], add_gen_prompt=True).to(device)
         text_embeddings = self.decoder.get_input_embeds(inputs)
         model_inputs = self.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
-        return self.decoder.generate(model_inputs, num_beams=num_beams, do_sample=do_sample)
+        return self.decoder.generate(model_inputs, num_beams=num_beams, do_sample=do_sample, max_new_tokens=max_new_tokens, **kwargs)
     
     def fsdp(self, fsdp_kwargs):
         self.decoder.fsdp(fsdp_kwargs)
