@@ -72,11 +72,12 @@ class Qwen3(torch.nn.Module):
         second_part = text_embeddings[:, 4:, :]
 
         embeddings = torch.concat((first_part, vision_embeddings , second_part), dim=1)
-        print('input ids', input_ids.shape)
+        print('input ids', input_ids)
+        print('think end', self.think_end)
     
         # generation start, split is used to create labels
         split = (input_ids[0] == self.think_end).nonzero(as_tuple=True)[-1] + 2 
-    
+        print('SPLIT', split)
         # labels
         labels = torch.ones(embeddings.shape[:2]) * -100
         labels[:, split + vision_embeddings.shape[1]:] = input_ids[:, split:]
@@ -98,11 +99,12 @@ class Qwen3(torch.nn.Module):
             add_generation_prompt=add_gen_prompt,
             enable_thinking=False, 
         )
-        print(texts)
+        # print(texts)
         vl_text = []
         for text in texts:
             vl_text.append(text.replace('<|im_start|>user', 
                                         '<|im_start|>user\n<|vision_start|><|vision_end|>'))
+        
         inputs = self.tokenizer(vl_text, return_tensors="pt", padding=True)
         # print(inputs)
         return inputs['input_ids']

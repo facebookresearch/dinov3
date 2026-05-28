@@ -1,9 +1,58 @@
 import torch
 from typing import Optional, List, Dict, Any
-from transformers import PreTrainedModel, PretrainedConfig
+from transformers import PreTrainedModel, PretrainedConfig, ProcessorMixin, AutoTokenizer, AutoImageProcessor
+from PIL import Image
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
-
 from .fossilVL import FossilVL
+
+
+class FossilVLProcessor(ProcessorMixin):
+    # Define quais sub-processadores fazem parte desta classe para salvamento/carregamento automático
+    attributes = ["image_processor", "tokenizer"]
+    image_processor_class = "AutoImageProcessor"
+    tokenizer_class = "AutoTokenizer"
+
+    def __init__(self, image_processor=None, tokenizer=None, dim=224, **kwargs):
+        # Passa os sub-processadores para o construtor base do Hugging Face
+        super().__init__(image_processor, tokenizer, **kwargs)
+        self.image_processor = image_processor
+        self.tokenizer = tokenizer
+        self.dim = dim
+        
+
+    def __call__(self, images=None, text=None, return_tensors="pt", **kwargs):
+        output_data = {}
+
+        processed_images = []
+        
+        for image in images:
+            if type(image[0]) == str:
+                im = Image.open(image[0])
+
+            im = self.image_processor(im.convert('RGB'))
+            processed_images.append(im)
+            print('preprocess', im.shape)
+
+        output_data['pixel_values'] = processed_images
+        # print('preprocess', text)
+        conversations = []
+        for t in text:
+            temp = [
+                {
+                "role": "user",
+                "content": t,
+                }
+            ]
+            conversations.append(temp)
+        output_data['conversations'] = conversations
+        output_data.update(self.tokenizer(text, return_tensors='pt'))
+        return output_data
+     
+    @property
+    def default_chat_template(self):
+        """Opcional: Define como as mensagens de chat se transformam em strings."""
+        # print(self.tokenizer.default_chat_template)
+        return self.tokenizer.default_chat_template
 
 
 class FossilVLConfig(PretrainedConfig):
@@ -35,6 +84,7 @@ class FossilVLForCausalLM(PreTrainedModel):
 
         # value head maps decoder hidden states -> scalar values (per token)
         decoder_dim = getattr(self.fossil.decoder, "dim", None)
+        
         if decoder_dim is None:
             # fallback: try to introspect from the HF model if available
             try:
@@ -44,22 +94,11 @@ class FossilVLForCausalLM(PreTrainedModel):
 
         self.value_head = torch.nn.Linear(decoder_dim, 1)
 
-    def _make_model_inputs(self, images: List[Any], conversations: List[Any]):
-        device = next(self.fossil.parameters()).device
-        image_tensors = self.fossil.encoder.get_image_tensors(images).to(device)
-        image_embeddings = self.fossil.encoder(image_tensors, return_grid=self.fossil.use_grid)
-        image_embeddings = self.fossil.projection(image_embeddings)
-
-        inputs = self.fossil.decoder.prepare_inputs(conversations).to(device)
-        text_embeddings = self.fossil.decoder.get_input_embeds(inputs)
-        model_inputs = self.fossil.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
-        return model_inputs
-
     def forward(self,
                 input_ids: Optional[torch.Tensor] = None,
                 attention_mask: Optional[torch.Tensor] = None,
                 inputs_embeds: Optional[torch.Tensor] = None,
-                images: Optional[List[Any]] = None,
+                pixel_values: Optional[List[Any]] = None,
                 conversations: Optional[List[Any]] = None,
                 return_dict: bool = True,
                 labels: Optional[torch.Tensor] = None,
@@ -80,30 +119,45 @@ class FossilVLForCausalLM(PreTrainedModel):
             A `CausalLMOutputWithCrossAttentions`-like object with an extra
             `values` field containing per-token value estimates.
         """
+        if inputs_embeds is None:
+            print('wraper forward', pixel_values.shape)
+            if type(pixel_values) == List:
+                images = torch.stack(pixel_values, dim=0)
+            
+            image_embeddings = self.fossil.encoder(pixel_values, return_grid=self.fossil.use_grid)
+            image_embeddings = self.fossil.projection(image_embeddings)
 
-        hf_model = self.fossil.decoder.model
+            inputs = self.fossil.decoder.prepare_inputs(conversations, add_gen_prompt=True)
+            # print('INPUTS', inputs)
+            text_embeddings = self.fossil.decoder.get_input_embeds(inputs)
+            model_inputs = self.fossil.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
+                    
+            # print('KWARG', kwargs)
+            old_mask = kwargs.pop('attention_mask', None)
+        
+            model_inputs = self.fossil.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
+            # print('MODEL INPUTS', model_inputs)
 
-        if images is None or conversations is None:
             # Standard HF-style forward for text-only or tokenizer-based APIs.
-            outputs = hf_model.forward(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                inputs_embeds=inputs_embeds,
+            outputs = self.fossil.decoder.model.forward(
+                inputs_embeds=model_inputs['input_embeddings'].to(old_mask.device),
+                attention_mask=model_inputs['attention_mask'].to(old_mask.device),
                 labels=labels,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
                 **kwargs,
             )
+        
         else:
-            model_inputs = self._make_model_inputs(images, conversations)
-            outputs = hf_model.forward(
-                inputs_embeds=model_inputs['input_embeddings'].to(device=hf_model.device, dtype=hf_model.dtype),
-                attention_mask=model_inputs['attention_mask'].to(device=hf_model.device),
-                labels=(model_inputs.get('labels') if labels is None else labels).to(device=hf_model.device) if model_inputs.get('labels') is not None or labels is not None else None,
+            outputs = self.fossil.decoder.model.forward(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                labels=labels,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
+                **kwargs,
             )
-
+        
         logits = outputs.logits
 
         if hasattr(outputs, 'hidden_states') and outputs.hidden_states:
@@ -125,27 +179,30 @@ class FossilVLForCausalLM(PreTrainedModel):
         return out
 
     def generate(self,
-                 images: Optional[List[Any]] = None,
+                 pixel_values: Optional[List[Any]] = None,
                  prompt: Optional[str] = None,
                  input_ids: Optional[torch.Tensor] = None,
                  num_beams: int = 1,
                  do_sample: bool = False,
                  max_new_tokens: int = 100,
+                 conversations: Optional[List[Any]]=None,
                  **kwargs,
                  ):
         """Expose generate through the wrapped FossilVL implementation."""
-        if images is not None and prompt is not None:
-            return self.fossil.generate(
-                images,
-                prompt,
-                num_beams=num_beams,
-                do_sample=do_sample,
-                max_new_tokens=max_new_tokens,
-                **kwargs,
-            )
+        images = torch.stack(pixel_values, dim=0)
+        image_embeddings = self.fossil.encoder(images, return_grid=self.fossil.use_grid)
+        image_embeddings = self.fossil.projection(image_embeddings)
 
+        inputs = self.fossil.decoder.prepare_inputs(conversations, add_gen_prompt=True)
+        # print('INPUTS', inputs)
+        text_embeddings = self.fossil.decoder.get_input_embeds(inputs)
+        model_inputs = self.fossil.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
+                
+        # print('KWARG', kwargs)
+        old_mask = kwargs.pop('attention_mask', None)
         return self.fossil.decoder.model.generate(
-            input_ids=input_ids,
+            inputs_embeds=model_inputs['input_embeddings'].to(old_mask.device),
+            attention_mask=model_inputs['attention_mask'].to(old_mask.device),
             num_beams=num_beams,
             do_sample=do_sample,
             max_new_tokens=max_new_tokens,

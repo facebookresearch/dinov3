@@ -21,3 +21,6 @@ logs/
 *.png
 *.json
 *.jpg
+*.pem
+GPTrequest.py
+*.ini
