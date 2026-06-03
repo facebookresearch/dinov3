@@ -121,7 +121,7 @@ def _make_dinov3_dpt_depther(
             url = DINOV3_BASE_URL + f"/{backbone_name}/{backbone_name}_{weights_name}_dpt_head-{hash}.pth"
         else:
             url = convert_path_or_url_to_url(depther_weights)
-        checkpoint = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
+        checkpoint = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash, weights_only=True)
         depther.decoder.load_state_dict(checkpoint, strict=True)
     return depther
 

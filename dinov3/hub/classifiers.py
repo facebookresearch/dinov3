@@ -44,7 +44,7 @@ def _make_dinov3_linear_classification_head(
             url = os.path.join(DINOV3_BASE_URL, backbone_name, model_filename)
         else:
             url = convert_path_or_url_to_url(classifier_weights)
-        state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
+        state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash, weights_only=True)
         linear_head.load_state_dict(state_dict, strict=True)
     return linear_head
 

@@ -103,7 +103,7 @@ def _make_dinov3_detector(
             url = os.path.join(DINOV3_BASE_URL, backbone_name, model_filename)
         else:
             url = convert_path_or_url_to_url(detector_weights)
-        state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)["model"]
+        state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash, weights_only=True)["model"]
         detector.load_state_dict(state_dict, strict=False)
     # Necessary for inference
     detector.num_queries = detector.num_queries_one2one
