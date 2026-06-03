@@ -9,8 +9,6 @@ from typing import List, Optional, Union
 from urllib.parse import urlparse
 from pathlib import Path
 
-import torch
-
 from .utils import _DINOV3_BASE_URL, _safe_load_state_dict_from_url
 
 

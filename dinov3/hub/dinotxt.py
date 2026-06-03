@@ -7,7 +7,6 @@ import math
 from typing import Any, Tuple, Union
 from enum import Enum
 
-import torch
 from torch import nn
 
 from .backbones import dinov3_vitl16, Weights as BackboneWeights, convert_path_or_url_to_url
@@ -75,7 +74,9 @@ def dinov3_vitl16_dinotxt_tet1280d20h24l(
             raise AssertionError(f"Unsuported weights for DINOTxt: {weights}")
         else:
             url = convert_path_or_url_to_url(weights)
-        vision_head_and_text_encoder_state_dict = _safe_load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
+        vision_head_and_text_encoder_state_dict = _safe_load_state_dict_from_url(
+            url, map_location="cpu", check_hash=check_hash
+        )
         model.load_state_dict(vision_head_and_text_encoder_state_dict, strict=False)
     else:
         model.init_weights()

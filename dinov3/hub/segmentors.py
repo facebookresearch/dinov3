@@ -48,7 +48,9 @@ def _make_dinov3_m2f_segmentor(
     )
     if pretrained:
         if type(segmentor_weights) is SegmentorWeights:
-            assert segmentor_weights == SegmentorWeights.ADE20K, f"Unsupported weights for segmentor: {segmentor_weights}"
+            assert segmentor_weights == SegmentorWeights.ADE20K, (
+                f"Unsupported weights for segmentor: {segmentor_weights}"
+            )
             segmentor_weights_name = segmentor_weights.value.lower()
             hash = kwargs["hash"] if "hash" in kwargs else "bf307cb1"
             model_filename = f"{backbone_name}_{segmentor_weights_name}_m2f_head-{hash}.pth"
