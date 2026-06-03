@@ -75,7 +75,12 @@ def dinov3_vitl16_dinotxt_tet1280d20h24l(
             raise AssertionError(f"Unsuported weights for DINOTxt: {weights}")
         else:
             url = convert_path_or_url_to_url(weights)
-        vision_head_and_text_encoder_state_dict = torch.hub.load_state_dict_from_url(url, check_hash=check_hash, weights_only=True)
+        kwargs = dict(
+            map_location="cpu",
+            check_hash=check_hash,
+            weights_only=True,
+        )
+        vision_head_and_text_encoder_state_dict = torch.hub.load_state_dict_from_url(url, **kwargs)
         model.load_state_dict(vision_head_and_text_encoder_state_dict, strict=False)
     else:
         model.init_weights()

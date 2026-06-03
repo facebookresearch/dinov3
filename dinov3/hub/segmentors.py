@@ -55,7 +55,12 @@ def _make_dinov3_m2f_segmentor(
             url = os.path.join(DINOV3_BASE_URL, backbone_name, model_filename)
         else:
             url = convert_path_or_url_to_url(segmentor_weights)
-        state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash, weights_only=True)
+        kwargs = dict(
+            map_location="cpu",
+            check_hash=check_hash,
+            weights_only=True,
+        )
+        state_dict = torch.hub.load_state_dict_from_url(url, **kwargs)
         missing_keys, unexpected_keys = segmentor.load_state_dict(state_dict, strict=False)
         assert len([k for k in missing_keys if "backbone" not in k]) == 0
         assert len(unexpected_keys) == 0
