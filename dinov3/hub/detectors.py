@@ -13,7 +13,7 @@ from dinov3.eval.detection.models.detr import PostProcess, build_model
 from dinov3.eval.detection.models.position_encoding import PositionEncoding
 
 from .backbones import Weights as BackboneWeights, dinov3_vit7b16, dinov3_vitl16plus, convert_path_or_url_to_url
-from .utils import DINOV3_BASE_URL
+from .utils import _DINOV3_BASE_URL, _safe_load_state_dict_from_url
 
 
 class DetectionWeights(Enum):
@@ -100,15 +100,10 @@ def _make_dinov3_detector(
             detection_weights_name = detector_weights.value.lower()
             hash = kwargs["hash"] if "hash" in kwargs else "b0235ff7"
             model_filename = f"{backbone_name}_{detection_weights_name}_detr_head-{hash}.pth"
-            url = os.path.join(DINOV3_BASE_URL, backbone_name, model_filename)
+            url = os.path.join(_DINOV3_BASE_URL, backbone_name, model_filename)
         else:
             url = convert_path_or_url_to_url(detector_weights)
-        kwargs = dict(
-            map_location="cpu",
-            check_hash=check_hash,
-            weights_only=True,
-        )
-        state_dict = torch.hub.load_state_dict_from_url(url, **kwargs)["model"]
+        state_dict = _safe_load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)["model"]
         detector.load_state_dict(state_dict, strict=False)
     # Necessary for inference
     detector.num_queries = detector.num_queries_one2one

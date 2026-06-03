@@ -16,7 +16,7 @@ from .backbones import (
     convert_path_or_url_to_url,
 )
 
-from .utils import DINOV3_BASE_URL
+from .utils import _DINOV3_BASE_URL, _safe_load_state_dict_from_url
 
 
 class ClassifierWeights(Enum):
@@ -41,15 +41,10 @@ def _make_dinov3_linear_classification_head(
             weights_name = classifier_weights.value.lower()
             hash = kwargs["hash"] if "hash" in kwargs else "90d8ed92"
             model_filename = f"{backbone_name}_{weights_name}_linear_head-{hash}.pth"
-            url = os.path.join(DINOV3_BASE_URL, backbone_name, model_filename)
+            url = os.path.join(_DINOV3_BASE_URL, backbone_name, model_filename)
         else:
             url = convert_path_or_url_to_url(classifier_weights)
-        kwargs = dict(
-          map_location="cpu",
-          check_hash=check_hash,
-          weights_only=True,
-        )
-        state_dict = torch.hub.load_state_dict_from_url(url, **kwargs)
+        state_dict = _safe_load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
         linear_head.load_state_dict(state_dict, strict=True)
     return linear_head
 

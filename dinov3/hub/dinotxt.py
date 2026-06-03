@@ -11,7 +11,7 @@ import torch
 from torch import nn
 
 from .backbones import dinov3_vitl16, Weights as BackboneWeights, convert_path_or_url_to_url
-from .utils import DINOV3_BASE_URL
+from .utils import _DINOV3_BASE_URL, _safe_load_state_dict_from_url
 
 
 class DINOTxtWeights(Enum):
@@ -70,17 +70,12 @@ def dinov3_vitl16_dinotxt_tet1280d20h24l(
         model.visual_model.backbone = vision_backbone
         model.eval()
         if type(weights) is DINOTxtWeights and weights == DINOTxtWeights.LVTD2300M:
-            url = f"{DINOV3_BASE_URL}/dinov3_vitl16/dinov3_vitl16_dinotxt_vision_head_and_text_encoder-a442d8f5.pth"
+            url = f"{_DINOV3_BASE_URL}/dinov3_vitl16/dinov3_vitl16_dinotxt_vision_head_and_text_encoder-a442d8f5.pth"
         elif type(weights) is DINOTxtWeights and weights != DINOTxtWeights.LVTD2300M:
             raise AssertionError(f"Unsuported weights for DINOTxt: {weights}")
         else:
             url = convert_path_or_url_to_url(weights)
-        kwargs = dict(
-            map_location="cpu",
-            check_hash=check_hash,
-            weights_only=True,
-        )
-        vision_head_and_text_encoder_state_dict = torch.hub.load_state_dict_from_url(url, **kwargs)
+        vision_head_and_text_encoder_state_dict = _safe_load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
         model.load_state_dict(vision_head_and_text_encoder_state_dict, strict=False)
     else:
         model.init_weights()

@@ -15,7 +15,7 @@ from .backbones import (
     Weights as BackboneWeights,
     convert_path_or_url_to_url,
 )
-from .utils import DINOV3_BASE_URL
+from .utils import _DINOV3_BASE_URL, _safe_load_state_dict_from_url
 
 
 class SegmentorWeights(Enum):
@@ -52,15 +52,10 @@ def _make_dinov3_m2f_segmentor(
             segmentor_weights_name = segmentor_weights.value.lower()
             hash = kwargs["hash"] if "hash" in kwargs else "bf307cb1"
             model_filename = f"{backbone_name}_{segmentor_weights_name}_m2f_head-{hash}.pth"
-            url = os.path.join(DINOV3_BASE_URL, backbone_name, model_filename)
+            url = os.path.join(_DINOV3_BASE_URL, backbone_name, model_filename)
         else:
             url = convert_path_or_url_to_url(segmentor_weights)
-        kwargs = dict(
-            map_location="cpu",
-            check_hash=check_hash,
-            weights_only=True,
-        )
-        state_dict = torch.hub.load_state_dict_from_url(url, **kwargs)
+        state_dict = _safe_load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
         missing_keys, unexpected_keys = segmentor.load_state_dict(state_dict, strict=False)
         assert len([k for k in missing_keys if "backbone" not in k]) == 0
         assert len(unexpected_keys) == 0

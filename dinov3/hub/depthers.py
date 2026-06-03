@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 import torch
 from dinov3.eval.depth.models import DecoderConfig, make_depther_from_config
 
-from .utils import DINOV3_BASE_URL
+from .utils import _DINOV3_BASE_URL, _safe_load_state_dict_from_url
 from .backbones import (
     Weights as BackboneWeights,
     dinov3_vitl16,
@@ -118,15 +118,10 @@ def _make_dinov3_dpt_depther(
             assert depther_weights == DepthWeights.SYNTHMIX, f"Unsupported depther weights {depther_weights}"
             weights_name = depther_weights.value.lower()
             hash = kwargs["hash"] if "hash" in kwargs else "02040be1"
-            url = DINOV3_BASE_URL + f"/{backbone_name}/{backbone_name}_{weights_name}_dpt_head-{hash}.pth"
+            url = _DINOV3_BASE_URL + f"/{backbone_name}/{backbone_name}_{weights_name}_dpt_head-{hash}.pth"
         else:
             url = convert_path_or_url_to_url(depther_weights)
-        kwargs = dict(
-            map_location="cpu",
-            check_hash=check_hash,
-            weights_only=True,
-        )
-        checkpoint = torch.hub.load_state_dict_from_url(url, **kwargs)
+        checkpoint = _safe_load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
         depther.decoder.load_state_dict(checkpoint, strict=True)
     return depther
 
@@ -194,9 +189,9 @@ def dinov3_vitl16_chmv2(
         if isinstance(weights, DepthWeights):
             assert weights == DepthWeights.CHMV2, f"Unsupported chmv2 weights {weights}"
             weights_name = weights.value.lower()
-            url = DINOV3_BASE_URL + f"/chmv2/dinov3_vitl16_{weights_name}_dpt_head-3703d643.pth"
+            url = _DINOV3_BASE_URL + f"/chmv2/dinov3_vitl16_{weights_name}_dpt_head-3703d643.pth"
         else:
             url = convert_path_or_url_to_url(weights)
-        checkpoint = torch.hub.load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
+        checkpoint = _safe_load_state_dict_from_url(url, map_location="cpu", check_hash=check_hash)
         chmv2_depther.decoder.load_state_dict(checkpoint, strict=True)
     return chmv2_depther
