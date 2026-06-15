@@ -21,7 +21,7 @@ logger = logging.getLogger("dinov3")
 Results: Any = pd.DataFrame
 
 try:
-    import openpyxl  # noqa: 401
+    import openpyxl  # noqa: F401
 
     HAS_OPENPYXL = True
 except ImportError:

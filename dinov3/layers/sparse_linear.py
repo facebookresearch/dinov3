@@ -51,7 +51,7 @@ def replace_linears_with_sparse_linear(root_module: nn.Module, *, filter_fn: Cal
         nonlocal total_count
         if not isinstance(module, nn.Linear) or not filter_fn(name):
             return module
-        assert type(module) == nn.Linear, "Subtypes not supported"
+        assert type(module) == nn.Linear, "Subtypes not supported" # noqa: E721
         new_module = LinearW24(
             in_features=module.in_features,
             out_features=module.out_features,

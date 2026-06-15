@@ -424,7 +424,7 @@ class PostProcess(nn.Module):
             scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
         boxes = boxes * scale_fct[:, None, :]
 
-        results = [{"scores": s, "labels": l, "boxes": b} for s, l, b in zip(scores, labels, boxes)]
+        results = [{"scores": score, "labels": label, "boxes": box} for score, label, box in zip(scores, labels, boxes)]
 
         return results
 
