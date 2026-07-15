@@ -135,10 +135,6 @@ student:
   pos_embed_rope_jitter_coords: null
   pos_embed_rope_rescale_coords: 2
   pos_embed_rope_dtype: bf16
-  sparse24_ranges: []
-  sparse24_filter:
-  - mlp
-  sparse24_default: false
   fp8_enabled: false
   fp8_filter: blocks
 teacher:
