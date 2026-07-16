@@ -486,7 +486,7 @@ sys.path.append(REPO_DIR)
 
 from PIL import Image
 import torch
-from torchvision import transforms
+from torchvision.transforms import v2
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from functools import partial
