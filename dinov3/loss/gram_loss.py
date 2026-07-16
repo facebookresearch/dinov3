@@ -78,7 +78,7 @@ class GramLoss(nn.Module):
 
         elif self.remove_only_teacher_neg:
             # Remove only the negative sim values of the teacher
-            target_sim[target_sim < 0] = 0.0
             student_sim[(student_sim < 0) & (target_sim < 0)] = 0.0
+            target_sim[target_sim < 0] = 0.0
 
         return self.mse_loss(student_sim, target_sim)
