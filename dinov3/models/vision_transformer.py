@@ -383,7 +383,7 @@ def vit_huge2(patch_size=16, **kwargs):
         embed_dim=1280,
         depth=32,
         num_heads=20,
-        ffn_ratio=4,
+        ffn_ratio=6.0,
         **kwargs,
     )
     return model
