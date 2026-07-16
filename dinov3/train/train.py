@@ -40,6 +40,11 @@ from dinov3.train.cosine_lr_scheduler import CosineScheduler, linear_warmup_cosi
 from dinov3.train.multidist_meta_arch import MultiDistillationMetaArch
 from dinov3.train.ssl_meta_arch import SSLMetaArch
 
+# added
+import dinov3.data.cxr_datasets as custom_ld
+# from torch.utils.data import ConcatDataset
+# from cxr_datasets.generic import GenericCXRDataset
+
 assert torch.__version__ >= (2, 1)
 torch.backends.cuda.matmul.allow_tf32 = True  # pytorch 1.12 sets this to false by default
 torch.backends.cudnn.benchmark = False  # True
@@ -91,6 +96,9 @@ For python-based LazyConfig, use "path.key=value".
     parser.add_argument("--record_ref_losses", action="store_true", help="record reference losses")
     parser.add_argument("--ref_losses_path", default="", type=str)
     parser.add_argument("--multi-distillation", action="store_true", help="run multi-distillation")
+    
+    # added
+    parser.add_argument("--local-rank", type=int, default=0, help="local rank for distributed training")
 
     return parser
 
@@ -306,11 +314,33 @@ def build_data_loader_from_cfg(
     batch_size = dataloader_batch_size_per_gpu
     num_workers = cfg.train.num_workers
     dataset_path = cfg.train.dataset_path
-    dataset = make_dataset(
-        dataset_str=dataset_path,
-        transform=model.build_data_augmentation_dino(cfg),
-        target_transform=lambda _: (),
-    )
+    
+    # dataset = make_dataset(
+    #     dataset_str=dataset_path,
+    #     transform=model.build_data_augmentation_dino(cfg),
+    #     target_transform=lambda _: (),
+    # )
+    
+    # if hasattr(cfg.train, "dataset_paths"):
+    #     datasets = [
+    #         GenericCXRDataset(
+    #             manifest_path=p,
+    #             transforms=model.build_data_augmentation_dino(cfg),
+    #             target_transform=lambda _: (),
+    #             backend="file"
+    #         )
+    #         for p in cfg.train.dataset_paths
+    #     ]
+    #     dataset = ConcatDataset(datasets)
+    # else:
+    #     dataset = GenericCXRDataset(
+    #         manifest_path=cfg.train.dataset_path,
+    #         transforms=model.build_data_augmentation_dino(cfg),
+    #         target_transform=lambda _: (),
+    #         backend="file"
+    #     )
+
+    dataset, _ = custom_ld.build_dataset(cfg, trnsfrm=model.build_data_augmentation_dino(cfg))
 
     if isinstance(dataset, torch.utils.data.IterableDataset):
         sampler_type = SamplerType.INFINITE
@@ -432,7 +462,7 @@ def do_train(cfg, model, resume=False):
     metrics_file = os.path.join(cfg.train.output_dir, "training_metrics.json")
     metric_logger = MetricLogger(delimiter="  ", output_file=metrics_file)
     # Manual garbage collection
-    gc.disable()
+    # gc.disable()
     gc.collect()
 
     # Training loop
@@ -480,22 +510,26 @@ def do_train(cfg, model, resume=False):
         last_layer_lr = last_layer_lr_schedule[it]
         apply_optim_scheduler(optimizer, lr, wd, last_layer_lr)
 
+        accum_steps = getattr(cfg.optim, "gradient_accumulation_steps", 1)
+
         # Forward backward
-        optimizer.zero_grad(set_to_none=True)
+        if iteration % accum_steps == 0:
+            optimizer.zero_grad(set_to_none=True)
         total_loss, metrics_dict = model.forward_backward(data, teacher_temp=teacher_temp, iteration=it)
 
-        # Gradient clipping
-        if cfg.optim.clip_grad:
-            for k, v in student.items():
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    v.parameters(),
-                    max_norm=cfg.optim.clip_grad,
-                )
-                metrics_dict[f"{k}_grad_norm"] = (
-                    grad_norm.full_tensor().item()
-                    if isinstance(grad_norm, torch.distributed.tensor.DTensor)
-                    else grad_norm.item()
-                )
+        if (iteration + 1) % accum_steps == 0:
+            # Gradient clipping
+            if cfg.optim.clip_grad:
+                for k, v in student.items():
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        v.parameters(),
+                        max_norm=cfg.optim.clip_grad,
+                    )
+                    metrics_dict[f"{k}_grad_norm"] = (
+                        grad_norm.full_tensor().item()
+                        if isinstance(grad_norm, torch.distributed.tensor.DTensor)
+                        else grad_norm.item()
+                    )
 
         # Reduce total_loss to check for NaNs, reduce metrics for logging
         total_loss_all_ranks = total_loss.new_empty(distributed.get_subgroup_size())
@@ -527,9 +561,11 @@ def do_train(cfg, model, resume=False):
                 raise RuntimeError(msg)
         else:
             consecutive_nan_count = 0
+            
         # Step optimizer
-        optimizer.step()
-        model.update_ema(mom)
+        if (iteration + 1) % accum_steps == 0:
+            optimizer.step()
+            model.update_ema(mom)
 
         # [GRAM] Update gram teacher when using gram teacher and frequent updates
         if (

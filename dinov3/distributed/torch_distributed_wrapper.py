@@ -132,21 +132,21 @@ class TorchDistributedEnvironment:
             self.world_size = int(os.environ["WORLD_SIZE"])
             self.local_rank = int(os.environ["LOCAL_RANK"])
             self.local_world_size = int(os.environ["LOCAL_WORLD_SIZE"])
-        elif "SLURM_JOB_ID" in os.environ:
-            # Slurm job created with sbatch, submitit, etc...
-            self.job_id = int(os.environ["SLURM_JOB_ID"])
-            self.job_type = JobType.SLURM
+        # elif "SLURM_JOB_ID" in os.environ:
+        #     # Slurm job created with sbatch, submitit, etc...
+        #     self.job_id = int(os.environ["SLURM_JOB_ID"])
+        #     self.job_type = JobType.SLURM
 
-            node_count = int(os.environ["SLURM_JOB_NUM_NODES"])
-            nodes = _parse_slurm_node_list(os.environ["SLURM_JOB_NODELIST"])
-            assert len(nodes) == node_count
+        #     node_count = int(os.environ["SLURM_JOB_NUM_NODES"])
+        #     nodes = _parse_slurm_node_list(os.environ["SLURM_JOB_NODELIST"])
+        #     assert len(nodes) == node_count
 
-            self.master_addr = nodes[0]
-            self.master_port = _get_master_port(seed=self.job_id)
-            self.rank = int(os.environ["SLURM_PROCID"])
-            self.world_size = int(os.environ["SLURM_NTASKS"])
-            self.local_rank = int(os.environ["SLURM_LOCALID"])
-            self.local_world_size = self.world_size // node_count
+        #     self.master_addr = nodes[0]
+        #     self.master_port = _get_master_port(seed=self.job_id)
+        #     self.rank = int(os.environ["SLURM_PROCID"])
+        #     self.world_size = int(os.environ["SLURM_NTASKS"])
+        #     self.local_rank = int(os.environ["SLURM_LOCALID"])
+        #     self.local_world_size = self.world_size // node_count
         else:
             # Single node and single job launched manually
             self.job_id = None
@@ -161,6 +161,13 @@ class TorchDistributedEnvironment:
 
         assert self.rank < self.world_size
         assert self.local_rank < self.local_world_size
+        # Prints
+        print(f"MASTER_ADDR={self.master_addr}")
+        print(f"MASTER_PORT={self.master_port}")
+        print(f"RANK={self.rank}")
+        print(f"WORLD_SIZE={self.world_size}")
+        print(f"LOCAL_RANK={self.local_rank}")
+        print(f"LOCAL_WORLD_SIZE={self.local_world_size}")
 
     def export(
         self,

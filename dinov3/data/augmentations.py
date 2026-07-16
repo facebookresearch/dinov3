@@ -10,7 +10,7 @@ import torch
 from torch import nn
 from torchvision.transforms import v2
 
-from dinov3.data.transforms import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, GaussianBlur, make_normalize_transform
+from dinov3.data.transforms import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, GaussianBlur, make_normalize_transform, make_normalize_transform_grayscale
 
 logger = logging.getLogger("dinov3")
 
@@ -46,6 +46,7 @@ class DataAugmentationDINO(object):
         self.share_color_jitter = share_color_jitter
         self.mean = mean
         self.std = std
+        self.is_rgb = len(mean) == 3
 
         logger.info("###################################")
         logger.info("Using data augmentation parameters:")
@@ -148,20 +149,44 @@ class DataAugmentationDINO(object):
                 make_normalize_transform(mean=mean, std=std),
             ]
         )
+        
+        # self.normalize_grayscale = v2.Compose(
+        #     [
+        #         v2.ToImage(),
+        #         v2.ToDtype(torch.float32, scale=True),
+        #         make_normalize_transform_grayscale(),
+        #     ]
+        # )
+
+        ensure_grayscale = v2.Grayscale()
 
         if self.share_color_jitter:
             self.color_jittering = color_jittering
-            self.global_transfo1 = v2.Compose([resize_global, global_transfo1_extra, self.normalize])
-            self.global_transfo2 = v2.Compose([resize_global, global_transfo2_extra, self.normalize])
-            self.local_transfo = v2.Compose([local_transfo_extra, self.normalize])
+            if self.is_rgb:
+                self.global_transfo1 = v2.Compose([resize_global, global_transfo1_extra, self.normalize])
+                self.global_transfo2 = v2.Compose([resize_global, global_transfo2_extra, self.normalize])
+                self.local_transfo = v2.Compose([local_transfo_extra, self.normalize])
+            else:
+                self.global_transfo1 = v2.Compose([ensure_grayscale, resize_global, global_transfo1_extra, self.normalize])
+                self.global_transfo2 = v2.Compose([ensure_grayscale, resize_global, global_transfo2_extra, self.normalize])
+                self.local_transfo = v2.Compose([ensure_grayscale, local_transfo_extra, self.normalize])
         else:
-            self.global_transfo1 = v2.Compose(
-                [resize_global, color_jittering, global_transfo1_extra, self.normalize]
-            )
-            self.global_transfo2 = v2.Compose(
-                [resize_global, color_jittering, global_transfo2_extra, self.normalize]
-            )
-            self.local_transfo = v2.Compose([color_jittering, local_transfo_extra, self.normalize])
+            if self.is_rgb:
+                self.global_transfo1 = v2.Compose(
+                    [resize_global, color_jittering, global_transfo1_extra, self.normalize]
+                )
+                self.global_transfo2 = v2.Compose(
+                    [resize_global, color_jittering, global_transfo2_extra, self.normalize]
+                )
+                self.local_transfo = v2.Compose([color_jittering, local_transfo_extra, self.normalize])
+            else:
+                self.global_transfo1 = v2.Compose(
+                    [ensure_grayscale, resize_global, color_jittering, global_transfo1_extra, self.normalize]
+                )
+                self.global_transfo2 = v2.Compose(
+                    [ensure_grayscale, resize_global, color_jittering, global_transfo2_extra, self.normalize]
+                )
+                self.local_transfo = v2.Compose([ensure_grayscale, color_jittering, local_transfo_extra, self.normalize])
 
     def __call__(self, image):
         output = {}
@@ -183,18 +208,20 @@ class DataAugmentationDINO(object):
 
         # global crops for teacher:
         if self.teacher_no_color_jitter:
+            norm_func = self.normalize if self.is_rgb else self.normalize
             output["global_crops_teacher"] = [
-                self.normalize(im1_base),
-                self.normalize(im2_base),
+                norm_func(im1_base),
+                norm_func(im2_base),
             ]
         else:
             output["global_crops_teacher"] = [global_crop_1, global_crop_2]
 
         if self.gram_teacher_crops_size is not None:
             # crops for gram teacher:
+            norm_func = self.normalize if self.is_rgb else self.normalize
             if self.gram_teacher_no_distortions:
-                gram_crop_1 = self.normalize(self.resize_gram_teacher(im1_base))
-                gram_crop_2 = self.normalize(self.resize_gram_teacher(im2_base))
+                gram_crop_1 = norm_func(self.resize_gram_teacher(im1_base))
+                gram_crop_2 = norm_func(self.resize_gram_teacher(im2_base))
             else:
                 gram_crop_1 = self.resize_gram_teacher(global_crop_1_transf)
                 gram_crop_2 = self.resize_gram_teacher(global_crop_2_transf)

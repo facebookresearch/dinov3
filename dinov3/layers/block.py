@@ -100,7 +100,7 @@ class SelfAttentionBlock(nn.Module):
             x_attn = torch.index_add(
                 x,
                 dim=0,
-                source=self.ls1(residual_1),
+                source=self.ls1(residual_1).to(x.dtype),
                 index=indices_1,
                 alpha=residual_scale_factor,
             )
@@ -113,7 +113,7 @@ class SelfAttentionBlock(nn.Module):
             x_ffn = torch.index_add(
                 x_attn,
                 dim=0,
-                source=self.ls2(residual_2),
+                source=self.ls2(residual_2).to(x_attn.dtype),
                 index=indices_2,
                 alpha=residual_scale_factor,
             )
@@ -155,7 +155,7 @@ class SelfAttentionBlock(nn.Module):
                 torch.index_add(
                     x,
                     dim=0,
-                    source=self.ls1(residual_1),
+                    source=self.ls1(residual_1).to(x.dtype),
                     index=indices_1,
                     alpha=residual_scale_factor,
                 )
@@ -179,7 +179,7 @@ class SelfAttentionBlock(nn.Module):
                 torch.index_add(
                     x_attn,
                     dim=0,
-                    source=self.ls2(residual_2),
+                    source=self.ls2(residual_2).to(x_attn.dtype),
                     index=indices_2,
                     alpha=residual_scale_factor,
                 )

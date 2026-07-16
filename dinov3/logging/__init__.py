@@ -35,7 +35,9 @@ class _LevelColoredFormatter(logging.Formatter):
         if colored_kwargs is None:
             return log
 
-        msg = record.msg % record.args if record.msg == "%s" else record.msg
+        raw_msg = record.getMessage()
+        msg = str(raw_msg)
+        
         index = log.rfind(msg, len(log) - len(msg))
         # Can happen in some cases, like if the msg contains `%s` which
         # have been replaced in `formatMessage`. Fallback to no colors

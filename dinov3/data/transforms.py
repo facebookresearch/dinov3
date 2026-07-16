@@ -43,6 +43,13 @@ def make_normalize_transform(
     return v2.Normalize(mean=mean, std=std)
 
 
+def make_normalize_transform_grayscale(
+    mean: Sequence[float] = [IMAGENET_DEFAULT_MEAN[0]],
+    std: Sequence[float] = [IMAGENET_DEFAULT_STD[0]],
+) -> v2.Normalize:
+    return v2.Normalize(mean=mean, std=std)
+
+
 def make_base_transform(
     mean: Sequence[float] = IMAGENET_DEFAULT_MEAN,
     std: Sequence[float] = IMAGENET_DEFAULT_STD,

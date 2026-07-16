@@ -7,3 +7,9 @@ termcolor
 torch
 torchmetrics
 torchvision
+timm
+torchxrayvision
+matplotlib
+monai
+torcheval
+interstat

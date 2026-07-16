@@ -48,6 +48,7 @@ gram:
   loss_weight: 1.0 # (float): weight of the loss
   ema_teacher: false # (bool): using the EMA teacher as GRAM teacher
   ckpt: null  #(str): Checkpoint to the teacher
+  ckpt_skip_keys: [] #(list): Keys to skip when loading the teacher checkpoint
   it_load_ema_teacher: -1 # (int): iteration at which the ema teacher is loaded into the gram teacher
   rep_update: true # (bool): if true GRAM teacher updated every gram.update_frequency after iter gram.it_first_update steps
   update_frequency: 50000 # (int): update frequency
@@ -90,6 +91,7 @@ student:
   ffn_layer: "mlp"
   ffn_ratio: 4.0
   resume_from_teacher_chkpt: ""
+  resume_from_teacher_chkpt_skip_keys: []
   qkv_bias: true
   proj_bias: true
   ffn_bias: true
@@ -142,6 +144,7 @@ optim:
   dino_head_wd_multiplier: 1.0
   layerwise_decay: 0.9
   multi_tensor_optim: true
+  gradient_accumulation_steps: 1
   dump_fsdp_weights_path: ""
   adamw_beta1: 0.9
   adamw_beta2: 0.999
