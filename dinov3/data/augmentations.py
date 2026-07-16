@@ -129,11 +129,13 @@ class DataAugmentationDINO(object):
             ]
         )
 
-        global_transfo1_extra = GaussianBlur(p=1.0)
+        # These probabilities preserve the de facto behavior of released
+        # checkpoints; transforms.GaussianBlur used to apply 1 - p instead of p.
+        global_transfo1_extra = GaussianBlur(p=0.0)
 
         global_transfo2_extra = v2.Compose(
             [
-                GaussianBlur(p=0.1),
+                GaussianBlur(p=0.9),
                 v2.RandomSolarize(threshold=128, p=0.2),
             ]
         )
