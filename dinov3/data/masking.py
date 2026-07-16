@@ -52,8 +52,8 @@ class MaskingGenerator:
         for _ in range(10):
             target_area = random.uniform(self.min_num_patches, max_mask_patches)
             aspect_ratio = math.exp(random.uniform(*self.log_aspect_ratio))
-            h = int(round(math.sqrt(target_area * aspect_ratio)))
-            w = int(round(math.sqrt(target_area / aspect_ratio)))
+            h = int(round(math.sqrt(target_area / aspect_ratio)))
+            w = int(round(math.sqrt(target_area * aspect_ratio)))
             if w < self.width and h < self.height:
                 top = random.randint(0, self.height - h)
                 left = random.randint(0, self.width - w)
