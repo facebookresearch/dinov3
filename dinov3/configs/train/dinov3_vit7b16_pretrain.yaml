@@ -6,7 +6,6 @@ MODEL:
 compute_precision:
   param_dtype: bf16
   reduce_dtype: fp32
-  sharding_strategy: SHARD_GRAD_OP
 dino:
   loss_weight: 1.0
   global_ignore_diagonal: true
@@ -55,6 +54,7 @@ train:
   checkpointing_full: false
   compile: true
   cudagraphs: false
+  fsdp_reshard_after_forward: true
   cell_augmentation: false
   cell_augmentation_type: hpa
   sharded_eval_checkpoint: true

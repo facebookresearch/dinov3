@@ -6,7 +6,6 @@ MODEL:
 compute_precision:
   param_dtype: bf16
   reduce_dtype: fp32
-  sharding_strategy: SHARD_GRAD_OP
 dino:
   loss_weight: 1.0
   global_ignore_diagonal: true  # Whether to ignore A-A and B-B global pairs, default as in DINOv2, ignored by SSLMetaArch
@@ -79,6 +78,7 @@ train:
   checkpointing_full: false  # aggressive checkpointing
   compile: true
   cudagraphs: false
+  fsdp_reshard_after_forward: true  # If false, params are unsharded before fwd and only resharded after bwd (same as 'SHARD_GRAD_OP' in FSDP1). If true, standard full sharding applies.
   sharded_eval_checkpoint: false
   cache_dataset: false
 student:
