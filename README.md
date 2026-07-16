@@ -650,7 +650,7 @@ Run DINOv3 pre-training on 4 H100-80GB nodes (32 GPUs) in a SLURM cluster enviro
   --nodes 4 \
   --config-file dinov3/configs/train/vitl_im1k_lin834.yaml \
   --output-dir <PATH/TO/OUTPUT/DIR> \
-  train.dataset_path=ImageNet22k:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
+  train.dataset_path=ImageNet:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
 ```
 Training time is approximately 14 hours and the resulting checkpoint should reach 82.0% on k-NN eval and 83.5% on linear eval.
 
