@@ -16,3 +16,8 @@ dist/
 
 # Ignore vscode directory
 .vscode/
+
+# Ignore output, samples, and weights folders
+output/
+samples/
+weights/
