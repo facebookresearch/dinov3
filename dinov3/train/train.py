@@ -431,8 +431,15 @@ def do_train(cfg, model, resume=False):
     logger.info("Starting training from iteration %d", start_iter)
     metrics_file = os.path.join(cfg.train.output_dir, "training_metrics.json")
     metric_logger = MetricLogger(delimiter="  ", output_file=metrics_file)
-    # Manual garbage collection
-    gc.disable()
+    # Keep automatic cycle GC enabled. Disabling it interacts with
+    # `torchvision.transforms.v2`, whose `pytree.tree_flatten` machinery creates
+    # short-lived reference cycles; with no cycle collector running, the cycles
+    # accumulate, holding tensor storage refs and shared-memory FDs, and worker
+    # anon RSS grows linearly (~1.25 GB/h/worker @ num_workers=16 observed in
+    # practice → multi-node OOM around 18h into training).
+    # The periodic, rank-synchronized `gc.collect()` below is kept for predictable
+    # cross-rank GC pauses; what is removed is the automatic-collector disable.
+    # Refs: #242, pytorch/vision#9242.
     gc.collect()
 
     # Training loop
