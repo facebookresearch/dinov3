@@ -35,7 +35,7 @@ from dinov3.eval.data import (
 )
 from dinov3.eval.helpers import args_dict_to_dataclass, cli_parser, write_results
 from dinov3.eval.metrics import ClassificationMetricType, build_classification_metric
-from dinov3.eval.setup import ModelConfig, load_model_and_context
+from dinov3.eval.setup import ModelConfig, get_autocast_device_type, load_model_and_context, resolve_device
 from dinov3.eval.utils import ModelWithNormalize, average_metrics, evaluate
 from dinov3.eval.utils import save_results as default_save_results_func
 from dinov3.run.init import job_context
@@ -235,11 +235,12 @@ def eval_knn(
     knn_config: TrainConfig,
     num_classes: int,
     save_results_func=None,
+    device=None,
 ):
     logger.info("Start the k-NN classification.")
     eval_metrics_dict: Dict[int, Dict[int, Dict[str, float]]] = {}  # {k: {try: {metric_name: metric_value}}}
     save_results = save_results_func is not None
-    device = torch.cuda.current_device()
+    device = resolve_device(device)
     partial_knn_module = partial(
         KnnModule,
         device=device,
@@ -302,9 +303,10 @@ def _log_and_format_results_dict(input_results_dict, few_shot_n_tries: int) -> D
     return results_dict
 
 
-def eval_knn_with_model(*, model: torch.nn.Module, autocast_dtype, config: KnnEvalConfig):
+def eval_knn_with_model(*, model: torch.nn.Module, autocast_dtype, config: KnnEvalConfig, device=None):
     start = time.time()
     cudnn.benchmark = True
+    device = resolve_device(device)
 
     # Setting up datasets
     transform = make_transform(config.transform)
@@ -332,10 +334,15 @@ def eval_knn_with_model(*, model: torch.nn.Module, autocast_dtype, config: KnnEv
         save_results_func = partial(default_save_results_func, output_dir=config.output_dir)
 
     model = ModelWithNormalize(model)
-    with torch.autocast("cuda", dtype=autocast_dtype):
+    with torch.autocast(get_autocast_device_type(device), dtype=autocast_dtype):
         logger.info("Extracting features for train set...")
         train_data_dict = extract_features_for_dataset_dict(
-            model, train_dataset_dict, config.train.batch_size, config.train.num_workers, gather_on_cpu=True
+            model,
+            train_dataset_dict,
+            config.train.batch_size,
+            config.train.num_workers,
+            gather_on_cpu=True,
+            device=device,
         )
         results_dict_knn = eval_knn(
             model=model,
@@ -345,6 +352,7 @@ def eval_knn_with_model(*, model: torch.nn.Module, autocast_dtype, config: KnnEv
             knn_config=config.train,
             num_classes=num_classes,
             save_results_func=save_results_func,
+            device=device,
         )
     results_dict = _log_and_format_results_dict(results_dict_knn, config.few_shot.n_tries)
 
@@ -365,7 +373,10 @@ def benchmark_launcher(eval_args: dict[str, object]) -> dict[str, Any]:
     dataclass_config, output_dir = args_dict_to_dataclass(eval_args=eval_args, config_dataclass=KnnEvalConfig)
     model, model_context = load_model_and_context(dataclass_config.model, output_dir=output_dir)
     results_dict = eval_knn_with_model(
-        model=model, config=dataclass_config, autocast_dtype=model_context["autocast_dtype"]
+        model=model,
+        config=dataclass_config,
+        autocast_dtype=model_context["autocast_dtype"],
+        device=model_context["device"],
     )
     write_results(results_dict, output_dir, RESULTS_FILENAME)
     return results_dict

@@ -128,6 +128,8 @@ class DepthConfig:
     result_config: ResultConfig = field(default_factory=ResultConfig)
     load_from: str | None = None  # path to .pt checkpoint to resume training from
     output_dir: str = ""
+    # Target device for inference; None selects CUDA when available, else CPU
+    device: str | None = None
 
 
 def make_depth_train_transforms_from_config(config: DepthConfig):

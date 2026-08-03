@@ -9,6 +9,7 @@ from typing import Any
 import torch
 from dinov3.eval.depth.checkpoint_utils import load_checkpoint
 from dinov3.eval.depth.utils import create_chmv2_mixlog_bins, create_outputs_with_chmv2_mixlog_norm
+from dinov3.eval.setup import get_autocast_device_type, resolve_device
 
 from .dpt_head import DPTHead
 from .linear_head import LinearHead
@@ -167,6 +168,7 @@ class Depther(torch.nn.Module):
         bins_strategy: str = "linear",
         norm_strategy: str = "linear",
         autocast_dtype: torch.dtype = torch.float32,
+        device=None,
     ):
         super().__init__()
         self.encoder = encoder
@@ -178,12 +180,15 @@ class Depther(torch.nn.Module):
             bins_strategy=bins_strategy,
             norm_strategy=norm_strategy,
         )
-        if torch.cuda.is_available():
-            self.autocast_ctx = partial(torch.autocast, device_type="cuda", dtype=autocast_dtype, enabled=True)
-            self.encoder.cuda()
-            self.decoder.cuda()
-        else:
-            self.autocast_ctx = partial(torch.autocast, device_type="cpu", enabled=True)
+        device = resolve_device(device)
+        self.encoder.to(device)
+        self.decoder.to(device)
+        self.autocast_ctx = partial(
+            torch.autocast,
+            device_type=get_autocast_device_type(device),
+            dtype=autocast_dtype,
+            enabled=True,
+        )
 
     def forward(self, x):
         with self.autocast_ctx():
@@ -203,6 +208,7 @@ def build_depther(
     adapt_to_patch_size: PatchSizeAdaptationStrategy = PatchSizeAdaptationStrategy.CENTER_PADDING,
     head_type: str = "dpt",
     autocast_dtype: torch.dtype = torch.float32,
+    device=None,
     # depth args
     min_depth: float = 0.001,
     max_depth: float = 10.0,
@@ -234,6 +240,7 @@ def build_depther(
         bins_strategy=bins_strategy,
         norm_strategy=norm_strategy,
         autocast_dtype=autocast_dtype,
+        device=device,
     )
     depther.eval()
     return depther
@@ -244,6 +251,7 @@ def make_depther_from_config(
     config: DecoderConfig,
     checkpoint_path: str | None = None,
     autocast_dtype: torch.dtype = torch.float32,
+    device=None,
 ) -> Depther:
     depther = build_depther(
         backbone,
@@ -255,6 +263,7 @@ def make_depther_from_config(
         adapt_to_patch_size=config.adapt_to_patch_size,
         head_type=config.type,
         autocast_dtype=autocast_dtype,
+        device=device,
         min_depth=config.min_depth,
         max_depth=config.max_depth,
         bins_strategy=config.bins_strategy,

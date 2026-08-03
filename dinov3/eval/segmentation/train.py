@@ -20,6 +20,7 @@ from dinov3.eval.segmentation.metrics import SEGMENTATION_METRICS
 from dinov3.eval.segmentation.models import build_segmentation_decoder
 from dinov3.eval.segmentation.schedulers import build_scheduler
 from dinov3.eval.segmentation.transforms import make_segmentation_eval_transforms, make_segmentation_train_transforms
+from dinov3.eval.setup import get_autocast_device_type, resolve_device
 from dinov3.logging import MetricLogger, SmoothedValue
 
 logger = logging.getLogger("dinov3")
@@ -116,7 +117,11 @@ def train_step(
     optimizer.zero_grad(set_to_none=True)
 
     # b) forward pass
-    with torch.autocast("cuda", dtype=model_dtype, enabled=True if model_dtype is not None else False):
+    with torch.autocast(
+        get_autocast_device_type(device),
+        dtype=model_dtype,
+        enabled=True if model_dtype is not None else False,
+    ):
         pred = segmentation_model(batch_img)  # B x num_classes x h x w
         gt = torch.squeeze(gt).long()  # Adapt gt dimension to enable loss calculation
 
@@ -157,6 +162,9 @@ def train_segmentation(
         num_classes=config.decoder_head.num_classes,
         autocast_dtype=config.model_dtype.autocast_dtype,
         dropout=config.decoder_head.dropout,
+        device=resolve_device(
+            config.model.device if config.model is not None and config.model.device is not None else config.device
+        ),
     )
     global_device = distributed.get_rank()
     local_device = torch.cuda.current_device()

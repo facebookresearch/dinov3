@@ -17,6 +17,7 @@ from dinov3.eval.segmentation.metrics import (
 )
 from dinov3.eval.segmentation.models import build_segmentation_decoder
 from dinov3.eval.segmentation.transforms import make_segmentation_eval_transforms
+from dinov3.eval.setup import resolve_device
 from dinov3.hub.segmentors import dinov3_vit7b16_ms
 from dinov3.logging import MetricLogger
 
@@ -95,6 +96,9 @@ def test_segmentation(backbone, config):
             num_classes=config.decoder_head.num_classes,
             autocast_dtype=config.model_dtype.autocast_dtype,
             dropout=config.decoder_head.dropout,
+            device=resolve_device(
+                config.model.device if config.model is not None and config.model.device is not None else config.device
+            ),
         )
         state_dict = torch.load(config.load_from, map_location="cpu")["model"]
         _, _ = segmentation_model.load_state_dict(state_dict, strict=False)

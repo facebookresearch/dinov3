@@ -52,6 +52,8 @@ def benchmark_launcher(eval_args: dict[str, object]) -> dict[str, Any]:
         dataclass_config, output_dir = args_dict_to_dataclass(eval_args=eval_args, config_dataclass=SegmentationConfig)
     backbone = None
     if dataclass_config.model:
+        if dataclass_config.model.device is None and dataclass_config.device is not None:
+            dataclass_config.model.device = dataclass_config.device
         backbone, _ = load_model_and_context(dataclass_config.model, output_dir=output_dir)
     else:
         assert dataclass_config.load_from == "dinov3_vit7b16_ms"

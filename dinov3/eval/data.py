@@ -230,14 +230,21 @@ def create_train_dataset_dict(
 
 
 def extract_features_for_dataset_dict(
-    model, dataset_dict: dict[int, dict[int, Any]], batch_size: int, num_workers: int, gather_on_cpu=False
+    model,
+    dataset_dict: dict[int, dict[int, Any]],
+    batch_size: int,
+    num_workers: int,
+    gather_on_cpu=False,
+    device=None,
 ) -> dict[int, dict[str, torch.Tensor]]:
     """
     Extract features for each subset of dataset in the context of few-shot evaluations
     """
     few_shot_data_dict: dict[int, dict[str, torch.Tensor]] = {}
     for try_n, dataset in dataset_dict.items():
-        features, labels = extract_features(model, dataset, batch_size, num_workers, gather_on_cpu=gather_on_cpu)
+        features, labels = extract_features(
+            model, dataset, batch_size, num_workers, gather_on_cpu=gather_on_cpu, device=device
+        )
         few_shot_data_dict[try_n] = {"train_features": features, "train_labels": labels}
     return few_shot_data_dict
 

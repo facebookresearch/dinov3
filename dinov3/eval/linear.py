@@ -38,7 +38,7 @@ from dinov3.data.transforms import (
 from dinov3.eval.data import create_train_dataset_dict, get_num_classes, pad_multilabel_and_collate
 from dinov3.eval.helpers import args_dict_to_dataclass, cli_parser, write_results
 from dinov3.eval.metrics import ClassificationMetricType, build_classification_metric
-from dinov3.eval.setup import ModelConfig, load_model_and_context
+from dinov3.eval.setup import ModelConfig, get_autocast_device_type, load_model_and_context, resolve_device
 from dinov3.eval.utils import LossType, ModelWithIntermediateLayers, average_metrics, evaluate
 from dinov3.eval.utils import save_results as default_save_results_func
 from dinov3.logging import MetricLogger, SmoothedValue
@@ -209,7 +209,8 @@ def scale_lr(learning_rates, batch_size):
     return learning_rates * (batch_size * distributed.get_world_size()) / 256.0
 
 
-def setup_linear_classifiers(sample_output, n_last_blocks_list, learning_rates, batch_size, num_classes=1000):
+def setup_linear_classifiers(sample_output, n_last_blocks_list, learning_rates, batch_size, num_classes=1000, device=None):
+    device = resolve_device(device)
     linear_classifiers_dict = nn.ModuleDict()
     optim_param_groups = []
     for n in n_last_blocks_list:
@@ -220,7 +221,7 @@ def setup_linear_classifiers(sample_output, n_last_blocks_list, learning_rates, 
                 linear_classifier = LinearClassifier(
                     out_dim, use_n_blocks=n, use_avgpool=avgpool, num_classes=num_classes
                 )
-                linear_classifier = linear_classifier.cuda()
+                linear_classifier = linear_classifier.to(device)
                 linear_classifiers_dict[
                     f"classifier_{n}_blocks_avgpool_{avgpool}_lr_{lr:.5f}".replace(".", "_")
                 ] = linear_classifier
@@ -280,6 +281,7 @@ class Evaluator:
     metrics_file_path: str
     training_num_classes: int
     save_results_func: Optional[Callable]
+    device: torch.device = field(default_factory=lambda: resolve_device())
 
     def __post_init__(self):
         self.data_loader, self.class_mapping = make_eval_data_loader(
@@ -316,7 +318,7 @@ class Evaluator:
             self.data_loader,
             postprocessors,
             metrics,
-            torch.cuda.current_device(),
+            self.device,
             accumulate_results=accumulate_results,
         )
 
@@ -388,7 +390,9 @@ def make_evaluators(
     metrics_file_path: str,
     training_num_classes: int,
     save_results_func: Optional[Callable],
+    device=None,
 ):
+    device = resolve_device(device)
     test_metric_types = eval_config.test_metric_types
     if len(test_metric_types) == 0:
         test_metric_types = (val_metric_type,) * len(eval_config.test_datasets)
@@ -404,6 +408,7 @@ def make_evaluators(
             metrics_file_path=metrics_file_path,
             training_num_classes=training_num_classes,
             save_results_func=save_results_func,
+            device=device,
         )
         for dataset_str, metric_type in zip(
             (val_dataset,) + tuple(eval_config.test_datasets),
@@ -419,6 +424,7 @@ def setup_linear_training(
     sample_output: torch.Tensor,
     training_num_classes: int,
     checkpoint_output_dir: str,
+    device=None,
 ):
     linear_classifiers, optim_param_groups = setup_linear_classifiers(
         sample_output,
@@ -426,6 +432,7 @@ def setup_linear_training(
         config.learning_rates,
         config.batch_size,
         training_num_classes,
+        device=device,
     )
     max_iter = config.epochs * config.epoch_length
     optimizer = config.optimizer_type.get_optimizer(optim_param_groups=optim_param_groups)
@@ -472,12 +479,15 @@ def train_linear_classifiers(
     training_num_classes: int,
     val_evaluator: Evaluator,
     checkpoint_output_dir: str,
+    device=None,
 ):
+    device = resolve_device(device)
     (linear_classifiers, start_iter, max_iter, criterion, optimizer, scheduler, best_accuracy,) = setup_linear_training(
         config=train_config,
-        sample_output=feature_model(train_dataset[0][0].unsqueeze(0).cuda()),
+        sample_output=feature_model(train_dataset[0][0].unsqueeze(0).to(device)),
         training_num_classes=training_num_classes,
         checkpoint_output_dir=checkpoint_output_dir,
+        device=device,
     )
     checkpoint_period = train_config.save_checkpoint_iterations or train_config.epoch_length
     eval_period = train_config.eval_period_iterations or train_config.epoch_length
@@ -507,8 +517,8 @@ def train_linear_classifiers(
         max_iter,
         start_iter,
     ):
-        data = data.cuda(non_blocking=True)
-        labels = labels.cuda(non_blocking=True)
+        data = data.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
 
         features = feature_model(data)
         outputs = linear_classifiers(features)
@@ -528,7 +538,8 @@ def train_linear_classifiers(
 
         # log
         if iteration % 10 == 0:
-            torch.cuda.synchronize()
+            if device.type == "cuda":
+                torch.cuda.synchronize()
             metric_logger.update(loss=loss.item())
             metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
@@ -584,9 +595,10 @@ def make_train_dataset(train_dataset: str, transform_config: TransformConfig):
     return make_dataset(dataset_str=train_dataset, transform=train_transform)
 
 
-def eval_linear_with_model(*, model: torch.nn.Module, autocast_dtype, config: LinearEvalConfig):
+def eval_linear_with_model(*, model: torch.nn.Module, autocast_dtype, config: LinearEvalConfig, device=None):
     start = time.time()
     cudnn.benchmark = True
+    device = resolve_device(device)
 
     train_dataset = make_train_dataset(config.train.dataset, config.transform)
     training_num_classes = get_num_classes(train_dataset)
@@ -597,7 +609,12 @@ def eval_linear_with_model(*, model: torch.nn.Module, autocast_dtype, config: Li
         few_shot_n_tries=config.few_shot.n_tries,
     )
     n_last_blocks = max(config.train.n_last_blocks_list)
-    autocast_ctx = partial(torch.autocast, device_type="cuda", enabled=True, dtype=autocast_dtype)
+    autocast_ctx = partial(
+        torch.autocast,
+        device_type=get_autocast_device_type(device),
+        enabled=True,
+        dtype=autocast_dtype,
+    )
     feature_model = ModelWithIntermediateLayers(model, n_last_blocks, autocast_ctx)
 
     save_results_func = None
@@ -613,6 +630,7 @@ def eval_linear_with_model(*, model: torch.nn.Module, autocast_dtype, config: Li
         metrics_file_path=metrics_file_path,
         training_num_classes=training_num_classes,
         save_results_func=save_results_func,
+        device=device,
     )
     results_dict = {}
     checkpoint_output_dirs: list = []
@@ -632,6 +650,7 @@ def eval_linear_with_model(*, model: torch.nn.Module, autocast_dtype, config: Li
             training_num_classes=training_num_classes,
             val_evaluator=val_evaluator,
             checkpoint_output_dir=checkpoint_output_dir,
+            device=device,
         )
         checkpoint_output_dirs.append(checkpoint_output_dir)
         results_dict[_try] = val_evaluator.evaluate_and_maybe_save(
@@ -669,7 +688,10 @@ def benchmark_launcher(eval_args: dict[str, object]) -> dict[str, Any]:
     dataclass_config, output_dir = args_dict_to_dataclass(eval_args=eval_args, config_dataclass=LinearEvalConfig)
     model, model_context = load_model_and_context(dataclass_config.model, output_dir=output_dir)
     results_dict = eval_linear_with_model(
-        model=model, config=dataclass_config, autocast_dtype=model_context["autocast_dtype"]
+        model=model,
+        config=dataclass_config,
+        autocast_dtype=model_context["autocast_dtype"],
+        device=model_context["device"],
     )
     write_results(results_dict, output_dir, RESULTS_FILENAME)
     return results_dict
