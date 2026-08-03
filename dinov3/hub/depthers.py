@@ -100,6 +100,7 @@ def _make_dinov3_dpt_depther(
     depth_range: Optional[Tuple[float, float]] = None,
     check_hash: bool = False,
     autocast_dtype: torch.dtype = torch.float32,
+    device=None,
     **kwargs,
 ):
     backbone: torch.nn.Module = _BACKBONE_DICT[backbone_name](
@@ -111,6 +112,7 @@ def _make_dinov3_dpt_depther(
         backbone,
         config=_get_depther_config(backbone_name, depth_range),
         autocast_dtype=autocast_dtype,
+        device=device,
     )
 
     if pretrained:
@@ -133,6 +135,7 @@ def dinov3_vit7b16_dd(
     backbone_weights: BackboneWeights | str = BackboneWeights.LVD1689M,
     check_hash: bool = False,
     autocast_dtype: torch.dtype = torch.float32,
+    device=None,
     **kwargs,
 ):
     return _make_dinov3_dpt_depther(
@@ -142,6 +145,7 @@ def dinov3_vit7b16_dd(
         backbone_weights=backbone_weights,
         check_hash=check_hash,
         autocast_dtype=autocast_dtype,
+        device=device,
         **kwargs,
     )
 
@@ -175,6 +179,7 @@ def dinov3_vitl16_chmv2(
     backbone_weights: BackboneWeights | str = BackboneWeights.SAT493M,
     check_hash: bool = False,
     autocast_dtype: torch.dtype = torch.float32,
+    device=None,
     **kwargs,
 ):
     backbone: torch.nn.Module = dinov3_vitl16(pretrained=pretrained, weights=backbone_weights)
@@ -183,6 +188,7 @@ def dinov3_vitl16_chmv2(
         backbone,
         config=_get_chmv2_config(),
         autocast_dtype=autocast_dtype,
+        device=device,
     )
 
     if pretrained:

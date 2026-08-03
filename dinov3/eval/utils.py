@@ -163,7 +163,7 @@ def all_gather_and_flatten(tensor_rank):
     return tensor_all_ranks.flatten(end_dim=1)
 
 
-def extract_features(model, dataset, batch_size, num_workers, gather_on_cpu=False):
+def extract_features(model, dataset, batch_size, num_workers, gather_on_cpu=False, device=None):
     dataset_with_enumerated_targets = DatasetWithEnumeratedTargets(dataset)
     sample_count = len(dataset_with_enumerated_targets)
     data_loader = make_data_loader(
@@ -174,18 +174,23 @@ def extract_features(model, dataset, batch_size, num_workers, gather_on_cpu=Fals
         drop_last=False,
         shuffle=False,
     )
-    return extract_features_with_dataloader(model, data_loader, sample_count, gather_on_cpu)
+    return extract_features_with_dataloader(
+        model, data_loader, sample_count, gather_on_cpu=gather_on_cpu, device=device
+    )
 
 
 @torch.inference_mode()
-def extract_features_with_dataloader(model, data_loader, sample_count, gather_on_cpu=False):
-    gather_device = torch.device("cpu") if gather_on_cpu else torch.device("cuda")
+def extract_features_with_dataloader(model, data_loader, sample_count, gather_on_cpu=False, device=None):
+    from dinov3.eval.setup import resolve_device
+
+    device = resolve_device(device)
+    gather_device = torch.device("cpu") if gather_on_cpu else device
     metric_logger = MetricLogger(delimiter="  ")
     features, all_labels = None, None
     for samples, (index, labels_rank) in metric_logger.log_every(data_loader, 10):
-        samples = samples.cuda(non_blocking=True)
-        labels_rank = labels_rank.cuda(non_blocking=True)
-        index = index.cuda(non_blocking=True)
+        samples = samples.to(device, non_blocking=True)
+        labels_rank = labels_rank.to(device, non_blocking=True)
+        index = index.to(device, non_blocking=True)
         features_rank = model(samples).float()
 
         # init storage feature matrix
@@ -210,7 +215,6 @@ def extract_features_with_dataloader(model, data_loader, sample_count, gather_on
     logger.info(f"Labels Shape {all_labels.shape}")
 
     return features, all_labels
-
 
 def save_features_dict(features_dict: Dict[str, torch.Tensor], path: str) -> None:
     logger.info(f'saving features to "{path}"')

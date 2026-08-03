@@ -20,7 +20,7 @@ from dinov3.eval.depth.models import make_depther_from_config
 from dinov3.eval.depth.train import train_model_with_backbone
 
 from dinov3.eval.helpers import args_dict_to_dataclass, cli_parser, write_results
-from dinov3.eval.setup import load_model_and_context
+from dinov3.eval.setup import load_model_and_context, resolve_device
 from dinov3.run.init import job_context
 from dinov3.hub.depthers import _get_depther_config, dinov3_vit7b16_dd
 
@@ -90,8 +90,10 @@ def benchmark_launcher(eval_args: dict[str, Any]) -> dict[str, Any]:
     OmegaConf.save(config=depth_config, f=os.path.join(output_dir, "depth_config.yaml"))
 
     config_autocast_dtype = depth_config.model_dtype.autocast_dtype if depth_config.model_dtype is not None else None
+    model_device = depth_config.model.device if depth_config.model is not None else None
+    device = resolve_device(model_device if model_device is not None else depth_config.device)
     if depth_config.load_from == "dinov3_vit7b16_dd":
-        with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
+        with torch.device(device):
             autocast_dtype = config_autocast_dtype or torch.float32
             # override config parameters with those of the pretrained depther
             depther_config = _get_depther_config("dinov3_vit7b16")
@@ -105,12 +107,16 @@ def benchmark_launcher(eval_args: dict[str, Any]) -> dict[str, Any]:
             depther = dinov3_vit7b16_dd(
                 pretrained=True,
                 autocast_dtype=autocast_dtype,
+                device=device,
             )
     else:
-        with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
+        if depth_config.model is not None and depth_config.model.device is None:
+            depth_config.model.device = str(device)
+        with torch.device(device):
             assert depth_config.model is not None
             model, model_context = load_model_and_context(depth_config.model, output_dir=output_dir)
             autocast_dtype = config_autocast_dtype or model_context["autocast_dtype"]
+            device = model_context["device"]
 
         if depth_config.load_from:
             depther = make_depther_from_config(
@@ -118,6 +124,7 @@ def benchmark_launcher(eval_args: dict[str, Any]) -> dict[str, Any]:
                 config=depth_config.decoder_head,
                 checkpoint_path=depth_config.load_from,
                 autocast_dtype=autocast_dtype,
+                device=device,
             )
             logger.info(f"Depth config:\n {OmegaConf.to_yaml(depth_config)}")
         else:

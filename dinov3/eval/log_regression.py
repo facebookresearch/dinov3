@@ -30,7 +30,7 @@ from dinov3.eval.data import (
 )
 from dinov3.eval.helpers import args_dict_to_dataclass, cli_parser, write_results
 from dinov3.eval.metrics import ClassificationMetricType, build_classification_metric
-from dinov3.eval.setup import ModelConfig, load_model_and_context
+from dinov3.eval.setup import ModelConfig, get_autocast_device_type, load_model_and_context, resolve_device
 from dinov3.eval.utils import average_metrics, evaluate, extract_features
 from dinov3.eval.utils import save_results as default_save_results_func
 from dinov3.run.init import job_context
@@ -142,7 +142,7 @@ class LogRegModule(nn.Module):
         self.estimator.fit(train_features, train_labels)
 
 
-def evaluate_logreg_model(*, logreg_model, test_metric, test_data_loader, save_results_func=None):
+def evaluate_logreg_model(*, logreg_model, test_metric, test_data_loader, save_results_func=None, device=None):
     key = "metrics"  # We need only one key as we have only one metric
     postprocessors, metrics = {key: logreg_model}, {key: test_metric}
     _, eval_metrics, accumulated_results = evaluate(
@@ -150,7 +150,7 @@ def evaluate_logreg_model(*, logreg_model, test_metric, test_data_loader, save_r
         test_data_loader,
         postprocessors,
         metrics,
-        torch.cuda.current_device(),
+        resolve_device(device),
         accumulate_results=save_results_func is not None,
     )
     if save_results_func is not None:
@@ -302,21 +302,21 @@ def make_train_val_datasets(train_config: TrainConfig, few_shot_config: FewShotC
     return train_dataset_dict, val_dataset, num_classes
 
 
-def make_test_dataset_and_data_loader(model, config: EvalConfig, transform, gather_on_cpu: bool):
+def make_test_dataset_and_data_loader(model, config: EvalConfig, transform, gather_on_cpu: bool, device=None):
     test_dataset = make_dataset(
         dataset_str=config.test_dataset,
         transform=transform,
         target_transform=get_target_transform(config.test_dataset),
     )
     test_features, test_labels = extract_features(
-        model, test_dataset, config.batch_size, config.num_workers, gather_on_cpu=gather_on_cpu
+        model, test_dataset, config.batch_size, config.num_workers, gather_on_cpu=gather_on_cpu, device=device
     )
     assert isinstance(config.batch_size, int)  # eval batch size has been replaced by train batch size if None
     test_data_loader = make_logreg_data_loader(config.batch_size, config.num_workers, test_features, test_labels)
     return test_dataset, test_data_loader
 
 
-def eval_log_regression_with_model(*, model: torch.nn.Module, autocast_dtype, config: LogregEvalConfig):
+def eval_log_regression_with_model(*, model: torch.nn.Module, autocast_dtype, config: LogregEvalConfig, device=None):
     """
     Implements the "standard" process for log regression evaluation:
     The value of C is chosen by training on train_dataset and evaluating on
@@ -327,6 +327,7 @@ def eval_log_regression_with_model(*, model: torch.nn.Module, autocast_dtype, co
     """
     start = time.time()
     cudnn.benchmark = True
+    device = resolve_device(device)
 
     transform = make_transform(config.transform)
     config.eval.batch_size = config.eval.batch_size or config.train.batch_size  # use train batch size for eval if None
@@ -335,20 +336,33 @@ def eval_log_regression_with_model(*, model: torch.nn.Module, autocast_dtype, co
     train_dataset_dict, val_dataset, num_classes = make_train_val_datasets(config.train, config.few_shot, transform)
 
     # Extracting features
-    with torch.autocast("cuda", dtype=autocast_dtype):
+    with torch.autocast(get_autocast_device_type(device), dtype=autocast_dtype):
         gather_on_cpu = torch.device(config.train.train_features_device) == _CPU_DEVICE
         train_data_dict = extract_features_for_dataset_dict(
-            model, train_dataset_dict, config.train.batch_size, config.train.num_workers, gather_on_cpu=gather_on_cpu
+            model,
+            train_dataset_dict,
+            config.train.batch_size,
+            config.train.num_workers,
+            gather_on_cpu=gather_on_cpu,
+            device=device,
         )
         logger.info("Choosing hyperparameters on the val dataset")
         val_features, val_labels = extract_features(
-            model, val_dataset, config.train.batch_size, config.train.num_workers, gather_on_cpu=gather_on_cpu
+            model,
+            val_dataset,
+            config.train.batch_size,
+            config.train.num_workers,
+            gather_on_cpu=gather_on_cpu,
+            device=device,
         )
-        test_dataset, test_data_loader = make_test_dataset_and_data_loader(model, config.eval, transform, gather_on_cpu)
+        test_dataset, test_data_loader = make_test_dataset_and_data_loader(
+            model, config.eval, transform, gather_on_cpu, device=device
+        )
 
     # Moves the model to cpu in-place. Deleting the variable would only delete a reference and not free any space.
     model.cpu()  # all features are extracted, we won't use the backbone anymore
-    torch.cuda.empty_cache()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
     # Setting up metrics
     val_metric = build_classification_metric(config.train.val_metric_type, num_classes=num_classes, dataset=val_dataset)
@@ -381,6 +395,7 @@ def eval_log_regression_with_model(*, model: torch.nn.Module, autocast_dtype, co
             test_metric=test_metric.clone(),
             test_data_loader=test_data_loader,
             save_results_func=split_results_saver,
+            device=device,
         )
         results_dict[_try] = {k: v.item() * 100.0 for k, v in eval_metrics["metrics"].items()}
 
@@ -403,7 +418,10 @@ def benchmark_launcher(eval_args: dict[str, object]) -> dict[str, Any]:
     dataclass_config, output_dir = args_dict_to_dataclass(eval_args=eval_args, config_dataclass=LogregEvalConfig)
     model, model_context = load_model_and_context(dataclass_config.model, output_dir=output_dir)
     results_dict = eval_log_regression_with_model(
-        model=model, config=dataclass_config, autocast_dtype=model_context["autocast_dtype"]
+        model=model,
+        config=dataclass_config,
+        autocast_dtype=model_context["autocast_dtype"],
+        device=model_context["device"],
     )
     write_results(results_dict, output_dir, RESULTS_FILENAME)
     return results_dict

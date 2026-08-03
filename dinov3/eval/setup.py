@@ -21,6 +21,8 @@ class ModelConfig:
     pretrained_weights: str | None = None
     # Loading a DINOv3 or v2 model from torch.hub
     dino_hub: str | None = None
+    # Target device for eval; None selects CUDA when available, else CPU
+    device: str | None = None
 
 
 class BaseModelContext(TypedDict):
@@ -29,6 +31,21 @@ class BaseModelContext(TypedDict):
     """
 
     autocast_dtype: torch.dtype  # default could be torch.float
+    device: torch.device
+
+
+def resolve_device(device: str | torch.device | None = None) -> torch.device:
+    if device is not None:
+        return torch.device(device)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
+def get_autocast_device_type(device: str | torch.device | None = None) -> str:
+    """Return a torch.autocast-compatible device_type string."""
+    resolved = resolve_device(device)
+    return "cuda" if resolved.type == "cuda" else "cpu"
 
 
 def load_model_and_context(model_config: ModelConfig, output_dir: str) -> tuple[torch.nn.Module, BaseModelContext]:
@@ -41,15 +58,17 @@ def load_model_and_context(model_config: ModelConfig, output_dir: str) -> tuple[
         else:
             raise ValueError
         model = torch.hub.load(f"facebookresearch/{repo}", model_config.dino_hub)
-        base_model_context = BaseModelContext(autocast_dtype=torch.float)
+        base_model_context = BaseModelContext(autocast_dtype=torch.float, device=resolve_device(model_config.device))
     else:
         model, base_model_context = setup_and_build_model(
             config_file=model_config.config_file,
             pretrained_weights=model_config.pretrained_weights,
             output_dir=output_dir,
+            device=model_config.device,
         )
 
-    model.cuda()
+    device = base_model_context["device"]
+    model.to(device)
     model.eval()
     return model, base_model_context
 
@@ -68,6 +87,7 @@ def setup_and_build_model(
     shard_unsharded_model: bool = False,
     output_dir: str = "",
     opts: list | None = None,
+    device: str | torch.device | None = None,
     **ignored_kwargs,
 ) -> Tuple[nn.Module, BaseModelContext]:
     cudnn.benchmark = True
@@ -82,4 +102,4 @@ def setup_and_build_model(
     config = setup_config(setup_args, strict_cfg=False)
     model = build_model_for_eval(config, setup_args.pretrained_weights)
     autocast_dtype = get_autocast_dtype(config)
-    return model, BaseModelContext(autocast_dtype=autocast_dtype)
+    return model, BaseModelContext(autocast_dtype=autocast_dtype, device=resolve_device(device))

@@ -124,3 +124,5 @@ class SegmentationConfig:
     # Additional Parameters
     output_dir: str | None = None
     load_from: str | None = None  # path to .pt checkpoint to resume training from or evaluate from
+    # Target device for inference; None selects CUDA when available, else CPU
+    device: str | None = None

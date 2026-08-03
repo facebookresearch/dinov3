@@ -11,6 +11,7 @@ import torch
 from dinov3.eval.segmentation.models.backbone.dinov3_adapter import DINOv3_Adapter
 from dinov3.eval.segmentation.models.heads.linear_head import LinearHead
 from dinov3.eval.segmentation.models.heads.mask2former_head import Mask2FormerHead
+from dinov3.eval.setup import get_autocast_device_type, resolve_device
 from dinov3.eval.utils import ModelWithIntermediateLayers
 
 
@@ -81,9 +82,16 @@ def build_segmentation_decoder(
     num_classes=150,
     dropout=0.1,
     autocast_dtype=torch.float32,
+    device=None,
 ):
     backbone_indices_to_use = _get_backbone_out_indices(backbone_model, backbone_out_layers)
-    autocast_ctx = partial(torch.autocast, device_type="cuda", enabled=True, dtype=autocast_dtype)
+    device = resolve_device(device)
+    autocast_ctx = partial(
+        torch.autocast,
+        device_type=get_autocast_device_type(device),
+        enabled=True,
+        dtype=autocast_dtype,
+    )
     if decoder_type == "m2f":
         backbone_model = DINOv3_Adapter(
             backbone_model,
