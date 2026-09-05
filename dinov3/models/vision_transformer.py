@@ -94,6 +94,11 @@ class DinoVisionTransformer(nn.Module):
             logger.warning(f"Ignored kwargs: {ignored_kwargs}")
         del ignored_kwargs
 
+        if n_storage_tokens < 0:
+            raise ValueError(
+                f"n_storage_tokens must be non-negative, got {n_storage_tokens}"
+            )
+
         norm_layer_cls = norm_layer_dict[norm_layer]
 
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
