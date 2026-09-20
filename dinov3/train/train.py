@@ -265,6 +265,11 @@ def do_test(cfg, model, iteration, process_group, do_low_freq=False):
         logger.info("Saved eval checkpoint: %s", ckpt_path)
 
 
+def _enable_worker_gc(worker_id):
+    # Forked workers inherit disabled GC but never run the training loop's manual collection.
+    gc.enable()
+
+
 def build_data_loader_from_cfg(
     cfg,
     model,
@@ -327,6 +332,7 @@ def build_data_loader_from_cfg(
         sampler_advance=start_iter * dataloader_batch_size_per_gpu,
         drop_last=True,
         collate_fn=collate_fn,
+        worker_init_fn=_enable_worker_gc,
     )
     return data_loader
 
