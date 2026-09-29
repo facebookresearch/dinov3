@@ -1,0 +1,37 @@
+# Requirements for the geo (FossilVL) project.
+# Install torch/torchvision with the CUDA build matching your driver first, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+# then:
+#   pip install -r geo/requirements.txt
+
+# deep learning
+torch>=2.6
+torchvision>=0.21
+torchao
+transformers>=4.51  # Qwen3 support
+accelerate
+peft
+trl  # SFT and GRPO trainers
+datasets
+bitsandbytes  # optional: 4-bit judge models in eval/eval_labels_llm.py
+git+https://github.com/openai/CLIP.git
+git+https://github.com/Baijiong-Lin/LoRA-Torch.git
+
+# config, data and utilities
+omegaconf
+numpy
+pandas
+pillow
+tqdm
+
+# analysis and visualization
+scikit-learn
+scipy
+matplotlib
+
+# text metrics
+nltk
+rouge-score
+
+# tests
+pytest
