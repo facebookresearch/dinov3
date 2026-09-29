@@ -32,6 +32,7 @@ class DataAugmentationDINO(object):
         horizontal_flips=True,
         mean=IMAGENET_DEFAULT_MEAN,
         std=IMAGENET_DEFAULT_STD,
+        keep_scale=False,
     ):
         self.global_crops_scale = global_crops_scale
         self.local_crops_scale = local_crops_scale
@@ -46,6 +47,7 @@ class DataAugmentationDINO(object):
         self.share_color_jitter = share_color_jitter
         self.mean = mean
         self.std = std
+        self.keep_scale = keep_scale
 
         logger.info("###################################")
         logger.info("Using data augmentation parameters:")
@@ -68,22 +70,34 @@ class DataAugmentationDINO(object):
         global_crop_max_size = max(global_crops_size, gram_teacher_crops_size if gram_teacher_crops_size else 0)
 
         # random resized crop and flip
-        self.geometric_augmentation_global = v2.Compose(
-            [
-                v2.RandomResizedCrop(
-                    global_crop_max_size,
-                    scale=global_crops_scale,
-                    interpolation=v2.InterpolationMode.BICUBIC,
-                ),
-                v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
-            ]
-        )
+        if not self.keep_scale:
+            self.geometric_augmentation_global = v2.Compose(
+                [
+                    v2.RandomResizedCrop(
+                        global_crop_max_size,
+                        scale=global_crops_scale,
+                        interpolation=v2.InterpolationMode.BICUBIC,
+                    ),
+                    v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
+                ]
+            )
+        
+        else:
+            self.geometric_augmentation_global = v2.Compose(
+                [
+                    v2.RandomCrop(
+                        global_crop_max_size,
+                    ),
+                    v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
+                ]
+            )
 
         resize_global = nn.Identity()  # Resize transform applied to global crops after random crop
         self.resize_global_post_transf = (
             nn.Identity()
         )  # Resize transform applied to global crops after all other transforms
         self.resize_gram_teacher = None  # Resize transform applied to crops for gram teacher
+        
         if gram_teacher_crops_size is not None:
             # All resize transforms will do nothing if the crop size is already the desired size.
             if gram_teacher_no_distortions:
@@ -107,16 +121,28 @@ class DataAugmentationDINO(object):
                 interpolation=v2.InterpolationMode.BICUBIC,
             )
 
-        self.geometric_augmentation_local = v2.Compose(
-            [
-                v2.RandomResizedCrop(
-                    local_crops_size,
-                    scale=local_crops_scale,
-                    interpolation=v2.InterpolationMode.BICUBIC,
-                ),
-                v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
-            ]
-        )
+        if not self.keep_scale:
+            self.geometric_augmentation_local = v2.Compose(
+                [
+                    v2.RandomResizedCrop(
+                        local_crops_size,
+                        scale=local_crops_scale,
+                        interpolation=v2.InterpolationMode.BICUBIC,
+                    ),
+                    v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
+                ]
+            )
+
+        else:
+            self.geometric_augmentation_local = v2.Compose(
+                [
+                    v2.RandomCrop(
+                        local_crops_size,
+                    ),
+                    v2.RandomHorizontalFlip(p=0.5 if horizontal_flips else 0.0),
+                ]
+            )
+
 
         # color distortions / blurring
         color_jittering = v2.Compose(

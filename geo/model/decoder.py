@@ -60,38 +60,38 @@ class Qwen3(torch.nn.Module):
           
 
     def get_input_embeds(self, inputs):
-        device = self.model.model.embed_tokens.weight.device
         if self.peft:
+            device = self.model.base_model.model.model.embed_tokens.weight.device
             return self.model.base_model.model.model.embed_tokens(inputs.to(device))
-        
+
+        device = self.model.model.embed_tokens.weight.device
         return self.model.model.embed_tokens(inputs.to(device))
 
-    def merge_inputs(self, vision_embeddings, text_embeddings, input_ids):
+    def merge_inputs(self, vision_embeddings, text_embeddings, input_ids, ):
         # TODO: find dinamically where to split based on token ids and append image
         first_part = text_embeddings[:, :4, :]
         second_part = text_embeddings[:, 4:, :]
 
         embeddings = torch.concat((first_part, vision_embeddings , second_part), dim=1)
-        print('input ids', input_ids)
-        print('think end', self.think_end)
-    
-        # generation start, split is used to create labels
-        split = (input_ids[0] == self.think_end).nonzero(as_tuple=True)[-1] + 2 
-        print('SPLIT', split)
-        # labels
         labels = torch.ones(embeddings.shape[:2]) * -100
-        labels[:, split + vision_embeddings.shape[1]:] = input_ids[:, split:]
-        labels[labels == self.tokenizer.pad_token] = -100
-        labels = labels.to(dtype=torch.long)
         attention_mask = torch.ones_like(labels)
         
+        # generation start, split is used to create labels
+        if self.think_end in input_ids[0]:
+            split = (input_ids[0] == self.think_end).nonzero(as_tuple=True)[-1] #+ 2
+            split = split[-1] + 2 
+            # labels
+            labels[:, split + vision_embeddings.shape[1]:] = input_ids[:, split:]
+            labels[labels == self.tokenizer.pad_token] = -100
+            labels = labels.to(dtype=torch.long)
+            
         return {
             'input_embeddings': embeddings,
             'attention_mask' : attention_mask,    
             'labels': labels,
             }
-
-
+    
+    
     def prepare_inputs(self, conversations, add_gen_prompt=False):
         texts = self.tokenizer.apply_chat_template(
             conversations,
@@ -110,12 +110,11 @@ class Qwen3(torch.nn.Module):
         return inputs['input_ids']
         
     def forward(self, inputs ):
-        device = self.model.model.embed_tokens.weight.device
     
         return self.model.forward(
-            inputs_embeds=inputs['input_embeddings'].to(device), 
-            labels=inputs['labels'].to(device), 
-            attention_mask=inputs['attention_mask'].to(device),
+            inputs_embeds=inputs['input_embeddings'], 
+            labels=inputs['labels'], 
+            attention_mask=inputs['attention_mask'],
             
             )
 
@@ -177,9 +176,10 @@ class Llama3(Qwen3):
         second_part = text_embeddings[:, index:, :]
 
         embeddings = torch.concat((first_part, vision_embeddings , second_part), dim=1)
-        
+    
         labels = torch.ones(input_ids.shape) * -100
-        
+        attention_mask = torch.ones_like(labels)
+    
         # where to mask during loss computation (-100) 
         split = (input_ids == self.im_start).nonzero(as_tuple=True)
         for i in range(input_ids.shape[0]):
@@ -192,13 +192,14 @@ class Llama3(Qwen3):
         # concat -100 for visual tokens
         vis_mask = torch.ones(vision_embeddings.shape[:2]) * -100
         labels = torch.concat([vis_mask, labels], dim=1)
-       
+    
         labels = labels.to(dtype=torch.long)
-        attention_mask = torch.ones_like(labels)
-       
+        
         return {
             'input_embeddings': embeddings,
             'attention_mask' : attention_mask,    
             'labels': labels,
 
             }
+
+    

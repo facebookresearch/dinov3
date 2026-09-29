@@ -28,6 +28,7 @@ def create_and_load_model(cfg_path, weight_path):
         layerscale_init=1e-05, 
         **conf.student,
     )
+
     state = torch.load(weight_path, weights_only=False)
     new_state = {}
     for k, v in state['model'].items():

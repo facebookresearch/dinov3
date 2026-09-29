@@ -72,7 +72,7 @@ def _parse_dataset_str(dataset_str: str):
     elif name == "GeoDataset":
         class_ = GeoDataset
         if "split" in kwargs:
-            kwargs["split"] = GeoDataset.Split[kwargs["split"]]
+            kwargs["split"] = GeoDataset.Split[kwargs["split"]] 
 
     else:
         raise ValueError(f'Unsupported dataset "{name}"')

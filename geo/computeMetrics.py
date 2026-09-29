@@ -24,7 +24,6 @@ def evaluate(predictions, references):
     # ---------------- Tokenization ----------------
     tokenized_preds = [pred.split() for pred in predictions]
     tokenized_refs = [[ref.split() for ref in refs] for refs in references]
-
     smoothie = SmoothingFunction().method4
 
     # ---------------- BLEU (1 to 4) ----------------
@@ -45,7 +44,9 @@ def evaluate(predictions, references):
                         smoothing_function=smoothie)
 
     # ---------------- METEOR ----------------
+
     meteor_scores = []
+
     for pred, refs in zip(predictions, references):
         tokenized_pred = pred.split()
         tokenized_refs = [r.split() for r in refs]
@@ -63,10 +64,9 @@ def evaluate(predictions, references):
 
     for pred, refs in zip(predictions, references):
         scores = [scorer.score(ref, pred) for ref in refs]
-
-        rouge1.append(max(s['rouge1'].fmeasure for s in scores))
-        rouge2.append(max(s['rouge2'].fmeasure for s in scores))
-        rougeL.append(max(s['rougeL'].fmeasure for s in scores))
+        rouge1.append(max([s['rouge1'].fmeasure for s in scores]))
+        rouge2.append(max([s['rouge2'].fmeasure for s in scores]))
+        rougeL.append(max([s['rougeL'].fmeasure for s in scores]))
 
     rouge1_avg = np.mean(rouge1)
     rouge2_avg = np.mean(rouge2)
@@ -87,8 +87,12 @@ def evaluate(predictions, references):
     return results
 
 if __name__ == "__main__":
-    # arg = '/nethome/recpinfo/users/fibz/data/checkpoints/capincho/nwpu/b512-t5-llama-3.2-1B-large/generated_captions.json'
-    arg = '/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/dinosat-llama3.2_1B-mapper/*3150_last.json'
+    # arg = '/nethome/recpinfo/users/fibz/data/checkpoints/capincho/nwpu/*base16/generated_captions.json'
+    # arg = '/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/CLIP-llama3.2-1B-full/*3150_last.json'
+    # arg = '/nethome/recpinfo/users/fibz/data/checkpoints/capincho/nwpu/*llama-base32-global/generated_captions.json'
+    # arg = '/nethome/recpinfo/users/fibz/data/checkpoints/capincho/geov4/*DINO1024*/generated_captions.json'
+    # arg = "/nethome/recpinfo/users/fibz/data/checkpoints/capincho/nwpu/*clipb32-*/generated_captions.json"
+    arg = "/nethome/recpinfo/users/fibz/data/checkpoints/fossil/geov4/*DINO2048*/generated_captions*.json"
     paths = glob(arg)
     
     for path in paths:
@@ -98,9 +102,10 @@ if __name__ == "__main__":
         pred = []
         for i, e in enumerate(data['generated']):
             pred.append(e['prediction'])
-            ref.append(e['reference'])
+            ref.append([e['reference']])
+            # print(pred[-1], ref[-1])    
         
-        
+        print(len(pred), len(ref))
         results = evaluate(pred, ref)
 
         print(results)

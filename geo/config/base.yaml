@@ -1,14 +1,22 @@
 encoder:
-  name: 'Fossil' 
-  weight_path: '/nethome/recpinfo/users/fibz/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
-  config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml' 
-  size: 512 # image size
+  # name: 'Fossil' 
+  # weight_path: '/nethome/recpinfo/users/fibz/data/checkpoint/dino/fossil-datasetv4-512/ckpt/11999/consolidated_model/pytorch_model.bin'
+  # config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml' 
+  # name: 'DINOv3'
+  # config_path: '' 
+  # weight_path: "facebook/dinov3-vitl16-pretrain-lvd1689m"
+  name: 'DINOtxt'
+  config_path: "/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/NWPU-DINOtxt-global-large-LoRA-Seed-batch256-t25/config.yaml" 
+  weight_path: ""
+  average_patch: False
+  size: [256, 512] # image size
 decoder:
   # name: "Qwen/Qwen3-4B-Thinking-2507"
-  name: "Qwen/Qwen3-0.6B"
-  lora_rank: 16
+  # name: "Qwen/Qwen3-0.6B"
+  name: "/nethome/recpinfo/users/fibz/data/checkpoint/finetuning/qwen3-0.6B/"
+  lora_rank: 4
   lora_alpha : 32
-  apply_lora: True
+  apply_lora: False
 multimodal: 'mapper:20' # mapper, merger, projector,
 train:
   batch_size: 16
@@ -22,9 +30,11 @@ train:
     learning_rate: 0.0002
     epochs: 4
 data:
-  root: "/nethome/atena_projetos/fibz/images"
-  train: "/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_train.json"
-  test: "/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_test.json"
+  groups: [2, 3]
+  root: "/nethome/atena_projetos/fvlk/data/Dataset/v4/images/"
+  train: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_train.json"
+  val: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_val.json"
+  test: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_test.json"
 save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil_vl"
 
 # "facebook/dinov3-vitl16-pretrain-lvd1689m"

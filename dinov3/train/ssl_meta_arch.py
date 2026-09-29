@@ -753,6 +753,7 @@ class SSLMetaArch(nn.Module):
             horizontal_flips=cfg.crops.horizontal_flips,
             mean=cfg.crops.rgb_mean,
             std=cfg.crops.rgb_std,
+            keep_scale=cfg.crops.keep_scale
         )
 
     def get_maybe_fused_params_for_submodel(self, m: nn.Module):

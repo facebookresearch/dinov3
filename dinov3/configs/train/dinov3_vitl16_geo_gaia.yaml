@@ -147,6 +147,7 @@ optim:
   adamw_beta1: 0.9
   adamw_beta2: 0.999
 crops:
+  keep_scale: true # keep physical scale
   global_crops_scale:
   - 0.32
   - 1.0

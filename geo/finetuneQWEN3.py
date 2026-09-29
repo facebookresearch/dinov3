@@ -5,13 +5,14 @@ from trl import SFTTrainer, SFTConfig
 
 
 if __name__ == '__main__':
-    model_name = "Qwen/Qwen3-4B-Thinking-2507"
+    # model_name = "Qwen/Qwen3-4B-Thinking-2507"
+    model_name = "Qwen/Qwen3-0.6B"
     # model_name = 'Qwen/Qwen2-1.5B-Instruct'
     # model_name = "Qwen/Qwen2-0.5B"
     # model_name = "facebook/opt-350m"
     # tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    output_dir = '/nethome/recpinfo/users/fibz/data/checkpoints/qwen3-finetune'
+    output_dir = '/nethome/recpinfo/users/fibz/data/checkpoint/finetuning/qwen3-0.6B-finetune'
     dataset = '/nethome/recpinfo/users/fibz/data/dataset/publico-COMPLETO.txt'
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, )
@@ -37,15 +38,15 @@ if __name__ == '__main__':
     )
     
     trainArgs = SFTConfig(
-        fp16=True,
+        bf16=True,
         logging_steps=10000,
         logging_strategy='steps',
         learning_rate=0.001,
         output_dir=output_dir,
         save_strategy='steps',
         save_steps=10000,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=16,
+        gradient_accumulation_steps=2,
         num_train_epochs=2,
         overwrite_output_dir=True,
         resume_from_checkpoint=True,
@@ -62,5 +63,5 @@ if __name__ == '__main__':
         args=trainArgs,
     )
     
-    trainer.train(resume_from_checkpoint=True)
+    trainer.train(resume_from_checkpoint=False)
     trainer.save_model(output_dir)

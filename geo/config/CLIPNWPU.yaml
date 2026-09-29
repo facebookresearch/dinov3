@@ -26,6 +26,6 @@ data:
   root: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/images"
   train: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_train_all.json"
   test: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_val_all.json"
-save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/CLIP_bs512_t5-llama_1B-mapper"
+save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/CLIP_bs256_t25-QWEN3-0.6-mapper"
 
 # "facebook/dinov3-vitl16-pretrain-lvd1689m"

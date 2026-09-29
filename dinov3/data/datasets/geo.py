@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Callable, Dict, List, Optional, Union
 from .decoders import ImageDataDecoder, TargetDecoder
 from .extended import ExtendedVisionDataset
+import pandas as pd
 
 
 class _Split(Enum):
@@ -13,17 +14,17 @@ class _Split(Enum):
 
 
 def read_data(root: str, split: _Split) -> List[Dict]:
-    annotation = os.path.join(root, f'caption_dataset_{split.value}.json')
+    annotation = os.path.join('/nethome/atena_projetos/fibz/data/Dataset/v4/', f'{split.value}.csv')
     annotation = os.path.abspath(os.path.normpath(annotation))
     print(annotation)
     data = {}
-    json_data = json.load(open(annotation, 'r'))
-
-    for sample in json_data:
-        id = sample['cd_guid']
+    file_data = pd.read_csv(annotation)
+    file_data = file_data[file_data['size']>=512]
+    for i, sample in file_data.iterrows():
+        id = sample['image_id']
         data[id] = {'id': id,
-                    'captions': sample['descricao'],
-                    'image': os.path.abspath(os.path.join(root, 'images', f'{id}.png'))}
+                    'captions': sample['original_description'],
+                    'image': os.path.abspath(os.path.join(root, f'{id}.png'))}
     return list(data.values())
 
 

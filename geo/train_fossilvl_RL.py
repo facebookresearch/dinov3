@@ -10,21 +10,8 @@ from trl import GRPOTrainer, GRPOConfig
 import torch
 import torch.nn.functional as F
 from omegaconf import OmegaConf
-from model.hf_fossilvl_wrapper import FossilVLForCausalLM, FossilVLConfig, FossilVLProcessor
-from transformers import AutoConfig, AutoModel, ImageProcessingMixin
-
-class ImageProcessorWrapper(ImageProcessingMixin):
-    def __init__(self, preprocess_method, size=224):
-        super().__init__()
-        self.preprocess_method = preprocess_method
-        self.size = size
-
-    def __call__(self, images, **kwargs):
-        # Redireciona a chamada para o seu método original
-        images = self.preprocess_method(images, self.size, **kwargs)
-        print('processorWraper', images.shape)
-        return images
-
+from model.hf_fossilvl_wrapper import FossilVLForCausalLM, FossilVLConfig, FossilVLProcessor, ImageProcessorWrapper
+from transformers import AutoConfig, AutoModel
 
 class NWPUCaptioningDataset(Dataset):
     """NWPU captioning dataset with image and 5 reference captions."""
@@ -41,10 +28,14 @@ class NWPUCaptioningDataset(Dataset):
         sample = self.data[index]
         image_path = os.path.join(self.root, sample["image_name"].replace("\\", "/"))
         captions = sample['captions']
+        prompt = [
+            {"role": "user", "content": [{"type": "image", "image": image_path}, {"type": "text", "text": self.prompt},]},
+        ]
+
         return {
             "image": image_path,
             "captions": captions,  # List of 5 reference captions
-            "prompt": self.prompt,
+            "prompt": prompt,
         }
 
 def rubric_reward(image, captions, completions, completion_ids, prompts, **kwargs)->list[float]:
@@ -87,9 +78,8 @@ def rubric_reward(image, captions, completions, completion_ids, prompts, **kwarg
         ] \
         }"
     
-    # print("COMPLETIONS", completions)
     for i in range(len(completions)):
-        # print(i, completions[i])
+        print(f'completions {i}: {completions[i]}')
         user_message = f"\
             **Weak Model Output:** \
             {completions[i]} \
@@ -123,7 +113,9 @@ def rubric_reward(image, captions, completions, completion_ids, prompts, **kwarg
                         "url": f"data:image/jpeg;base64,{base64_image}"    
                      }
                  }
-             ]}
+            
+            ]},
+            
         ]
     
     return [float(0.0)]*len(completions)
@@ -132,6 +124,7 @@ def collate_nwpu_fn(batch):
     return {
         "image": [sample["image"] for sample in batch],
         "captions": [sample["captions"] for sample in batch],  # List of lists
+        "prompt": [sample["prompt"] for sample in batch],
     }
 
 
@@ -153,8 +146,7 @@ def main():
   
     train_dataset = NWPUCaptioningDataset(os.path.join(os.path.dirname(args.dataset), 'images'), args.dataset, 'Provide a concise caption of this satellite image')
     model = FossilVLForCausalLM.from_fossil_conf(conf)
-    print(model)
-    
+
     training_args = GRPOConfig(
         per_device_train_batch_size=args.batch_size,
         num_generations=args.batch_size, #number of completions
@@ -170,7 +162,6 @@ def main():
         processing_class=FossilVLProcessor(
             ImageProcessorWrapper(model.fossil.encoder.preprocess, conf.encoder.size), 
             model.fossil.decoder.tokenizer, 
-            model.fossil.decoder.prepare_inputs
         ),
   
     )
