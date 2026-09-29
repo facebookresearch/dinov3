@@ -10,7 +10,7 @@ logs/
 **/notebooks
 
 # Ignore shell scripts
-*.sh
+geo/*.sh
 
 # Ignore swap files
 *.swp
