@@ -10,12 +10,13 @@
 #SBATCH --ntasks-per-node=4          # one process per GPU; keep equal to the number of GPUs below
 #SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=8
+#SBATCH --account=tornado 
 #SBATCH --mem=200G
 #SBATCH --time=06:00:00
 #SBATCH --array=0-7%4                # one task per entry of MODELS; %4 = at most 4 models at once
 #SBATCH --output=logs/judge-rel-%A_%a.out
-##SBATCH --partition=gpu
-##SBATCH --account=my_account
+##SBATCH --partition=tc
+
 
 set -euo pipefail
 
@@ -48,7 +49,7 @@ OUT_DIR=${OUT_DIR:-geo/eval/reliability}
 # ---- environment: edit for your cluster ------------------------------------------------------------
 # module load cuda/12.6
 # source ~/miniconda3/etc/profile.d/conda.sh && conda activate geo
-export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}   # put it on a shared filesystem
+# export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}   # put it on a shared filesystem
 # export HF_HUB_OFFLINE=1                              # compute nodes without internet: pre-download first
 # gated models (Llama) read the token saved by `hf auth login` in $HF_HOME; or set HF_TOKEN here
 export TOKENIZERS_PARALLELISM=false
