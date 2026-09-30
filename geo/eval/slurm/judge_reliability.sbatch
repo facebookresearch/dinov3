@@ -17,6 +17,12 @@
 #SBATCH --output=logs/judge-rel-%A_%a.out
 ##SBATCH --partition=tc
 
+export HTTP_PROXY=http://$USER:$PASSWORD@inet-sys.petrobras.com.br:804
+export HTTPS_PROXY=http://$USER:$PASSWORD@inet-sys.petrobras.com.br:804
+export NO_PROXY="127.0.0.1, localhost, petrobras.com.br, petrobras.biz"
+
+. ~/.bashrc 
+conda activate cap 
 
 set -euo pipefail
 

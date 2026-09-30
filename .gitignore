@@ -11,6 +11,11 @@ logs/
 
 # Ignore shell scripts
 geo/*.sh
+submit.sh
+heads.sh
+features.sh
+
+geo/eval/reliability/
 
 # Ignore swap files
 *.swp
