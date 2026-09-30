@@ -22,7 +22,7 @@ pip install -r geo/requirements.txt
 mkdir -p logs                          # Slurm writes the job logs here and does not create the folder
 ```
 
-Set `HF_HOME` to a shared filesystem with enough space (about 560 GB for every model in the list), for
+Set `HF_HOME` to a shared filesystem with enough space (about 610 GB for every model in the list), for
 example in `~/.bashrc`:
 
 ```bash
@@ -41,6 +41,11 @@ Meta has no 14B or 32B text Llama, so the Llama judges are 3B (compare with Phi-
 Qwen2.5-7B and Qwen3-8B) and 70B (compare with Qwen2.5-72B). The 70B needs about 141 GB in bf16, so it is
 spread over a node's GPUs, like the 72B.
 
+**Mistral-Small-24B-Instruct-2501 (index 12)** is not gated. It is a dense, text-only 24B, between the Qwen
+14B and 32B judges, and needs about 47 GB in bf16: one 80 GB GPU, or add `--load_in_4bit` on 40 GB GPUs.
+Transformers warns that its tokenizer has an incorrect regex pattern (`fix_mistral_regex`). On this dataset
+the fix changes nothing: every reference, claim and full prompt tokenizes identically with and without it.
+
 If the compute nodes have no internet access, download the models on the login node first, and uncomment
 `export HF_HUB_OFFLINE=1` in the sbatch file:
 
@@ -48,7 +53,8 @@ If the compute nodes have no internet access, download the models on the login n
 python geo/eval/judge_reliability.py download \
   Qwen/Qwen2.5-7B-Instruct microsoft/Phi-3.5-mini-instruct Qwen/Qwen3-8B Qwen/Qwen2.5-14B-Instruct \
   Qwen/Qwen3-14B Qwen/Qwen2.5-32B-Instruct Qwen/Qwen3-32B Qwen/Qwen2.5-72B-Instruct \
-  meta-llama/Llama-3.2-3B-Instruct meta-llama/Llama-3.1-8B-Instruct meta-llama/Llama-3.3-70B-Instruct
+  meta-llama/Llama-3.2-3B-Instruct meta-llama/Llama-3.1-8B-Instruct meta-llama/Llama-3.3-70B-Instruct \
+  mistralai/Mistral-Small-24B-Instruct-2501
 ```
 
 ## 2. Edit `geo/eval/slurm/judge_reliability.sbatch`

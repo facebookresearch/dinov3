@@ -38,6 +38,8 @@ MODELS=(
   "meta-llama/Llama-3.2-3B-Instruct||64"          # ~ Phi-3.5-mini
   "meta-llama/Llama-3.1-8B-Instruct||64"          # ~ Qwen2.5-7B / Qwen3-8B
   "meta-llama/Llama-3.3-70B-Instruct|--device_map auto|16"  # ~ Qwen2.5-72B; ~141 GB in bf16
+  # Mistral: dense, text-only 24B between the Qwen 14B and 32B judges; ~47 GB in bf16 (40 GB GPUs: --load_in_4bit)
+  "mistralai/Mistral-Small-24B-Instruct-2501||16"
 )
 
 INPUT=${INPUT:-geo/eval/todos.json}

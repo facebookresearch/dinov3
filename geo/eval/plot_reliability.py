@@ -33,7 +33,7 @@ SIZES = {'Phi-3.5-mini-instruct': 3.8, 'Qwen2.5-0.5B-Instruct': 0.5, 'Qwen2.5-1.
          'Qwen2.5-3B-Instruct': 3.1, 'Qwen2.5-7B-Instruct': 7.6, 'Qwen2.5-14B-Instruct': 14.7,
          'Qwen2.5-32B-Instruct': 32.5, 'Qwen2.5-72B-Instruct': 72.7, 'Qwen3-8B': 8.2, 'Qwen3-14B': 14.8,
          'Qwen3-32B': 32.8, 'Llama-3.2-3B-Instruct': 3.2, 'Llama-3.1-8B-Instruct': 8.0,
-         'Llama-3.3-70B-Instruct': 70.6}
+         'Llama-3.3-70B-Instruct': 70.6, 'Mistral-Small-24B-Instruct-2501': 23.6}
 # colour follows the model family (fixed slot order, never by rank); a 4th family would need facets instead
 FAMILIES = [('Qwen', SERIES[0]), ('Llama', SERIES[1]), ('Other', SERIES[2])]
 
@@ -46,7 +46,8 @@ def family(tag):
 def short_name(tag):
     name = tag.split('__', 1)[-1]
     four_bit = name.endswith('-4bit')
-    name = name.removesuffix('-4bit').removesuffix('-Instruct').removesuffix('-instruct')
+    name = name.removesuffix('-4bit').replace('-Instruct', '').replace('-instruct', '')
+    name = re.sub(r'-\d{4}$', '', name)  # release date (Mistral-Small-24B-2501)
     return name + (' (4-bit)' if four_bit else '')
 
 
@@ -147,8 +148,9 @@ def plot_quality_vs_size(models, order, out_dir):
 
 
 def place_labels(fig, labels, sized, models):
-    """Puts each point label right, above, below or left of its point: the first spot, measured on the final
-    layout, that covers no other point, no label placed before it and stays inside the axes."""
+    """Puts each point label right, above, below or left of its point, measured on the final layout: the first
+    spot that covers no other point, no label placed before it and stays inside the axes, else the spot with the
+    least overlap."""
     renderer = fig.canvas.get_renderer()
     spots = [((6, 0), 'left', 'center'), ((0, 7), 'center', 'bottom'), ((0, -7), 'center', 'top'),
              ((-6, 0), 'right', 'center')]
@@ -156,20 +158,21 @@ def place_labels(fig, labels, sized, models):
     for ax, key, t, text in labels:
         points = [ax.transData.transform((model_size(o), models[o][key])) for o in sized if o != t]
         frame = ax.get_window_extent(renderer)
-        for offset, ha, va in spots:
-            text.set_position(offset)
-            text.set_ha(ha)
-            text.set_va(va)
+
+        def cost(spot):
+            text.set_position(spot[0])
+            text.set_ha(spot[1])
+            text.set_va(spot[2])
             box = text.get_window_extent(renderer)
-            clear = (not any(box.x0 - 5 <= px <= box.x1 + 5 and box.y0 - 5 <= py <= box.y1 + 5 for px, py in points)
-                     and not any(box.overlaps(b) for b in placed)
-                     and frame.x0 <= box.x0 and box.x1 <= frame.x1 and frame.y0 <= box.y0 and box.y1 <= frame.y1)
-            if clear:
-                break
-        else:
-            text.set_position(spots[0][0])
-            text.set_ha(spots[0][1])
-            text.set_va(spots[0][2])
+            covered = sum(box.x0 - 5 <= px <= box.x1 + 5 and box.y0 - 5 <= py <= box.y1 + 5 for px, py in points)
+            overlap = sum(max(0, min(box.x1, b.x1) - max(box.x0, b.x0)) * max(0, min(box.y1, b.y1) - max(box.y0, b.y0))
+                          for b in placed)
+            outside = not (frame.x0 <= box.x0 and box.x1 <= frame.x1 and frame.y0 <= box.y0 and box.y1 <= frame.y1)
+            return covered * 1e4 + overlap + outside * 1e5
+
+        costs = [cost(s) for s in spots]
+        best = spots[int(np.argmin(costs))]
+        cost(best)  # apply the chosen spot
         placed.append(text.get_window_extent(renderer))
 
 

@@ -363,8 +363,10 @@ def render_report(s, n_hard):
 def cmd_download(args):
     from huggingface_hub import snapshot_download
     for model in args.models:
+        # consolidated.safetensors (Mistral) and original/ (Llama) duplicate the weights for other runtimes
         path = snapshot_download(model, allow_patterns=['*.json', '*.safetensors', '*.model', '*.txt', '*.py',
-                                                        '*.tiktoken', 'tokenizer*'])
+                                                        '*.tiktoken', 'tokenizer*'],
+                                 ignore_patterns=['consolidated*', 'original/*'])
         print(f'{model} -> {path}')
 
 
