@@ -136,6 +136,32 @@ def judge_questions(judge, questions, batch_size):
     return questions
 
 
+def score_pairs(judge, pairs, batch_size, on_batch=None):
+    """P(yes) for (text, claim) pairs. Longest first, so similar lengths share batches and an out-of-memory error
+    shows up at the start; the batch size is halved when that happens. on_batch(indices, probs) is called after
+    every batch (e.g. to save progress)."""
+    import torch
+
+    order = sorted(range(len(pairs)), key=lambda i: -len(pairs[i][0]) - len(pairs[i][1]))
+    probs, start, size = [0.0] * len(pairs), 0, batch_size
+    while start < len(order):
+        batch = order[start:start + size]
+        try:
+            out = judge.score([build_messages({'text': pairs[i][0], 'claim': pairs[i][1]}) for i in batch])
+        except torch.cuda.OutOfMemoryError:
+            if size == 1:
+                raise
+            size //= 2
+            torch.cuda.empty_cache()
+            continue
+        for i, p in zip(batch, out):
+            probs[i] = p
+        if on_batch:
+            on_batch(batch, out)
+        start += len(batch)
+    return probs
+
+
 def summarize(questions, n_samples, threshold=0.5):
     per_category = defaultdict(lambda: [0, 0])
     per_sample = defaultdict(lambda: [0, 0])

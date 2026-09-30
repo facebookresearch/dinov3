@@ -42,8 +42,43 @@ ROLE_SWAP = {'Constituintes Principais': 'Constituintes Secundários',
 
 # ----------------------------------------------------------------------------------------------- questions
 
-def _parts(value):
+def label_parts(value):
+    """'Arbustos/Dígitos' -> {'arbustos', 'dígitos'}: values sharing a part are never used as each other's negative."""
     return {p.strip() for p in value.strip().lower().split('/') if p.strip()}
+
+
+def normalize_labels(labels):
+    """Stripped, deduplicated and sorted values; categories without values dropped."""
+    labels = {c: sorted({v.strip() for v in vs if v.strip()}) for c, vs in labels.items()}
+    return {c: vs for c, vs in labels.items() if vs}
+
+
+def label_pools(all_labels):
+    """Every value seen per category, the source of absent-label negatives."""
+    pools = defaultdict(set)
+    for labels in all_labels:
+        for c, vs in labels.items():
+            pools[c].update(vs)
+    return {c: sorted(vs) for c, vs in pools.items()}
+
+
+def sample_claims(labels, pools, rng, neg_ratio=1.0, ignore_role=False):
+    """(category, label, gold, kind) for one sample: its own labels (positive), labels of the same category from
+    other samples (absent, neg_ratio per positive) and its constituents in the other role (role_swap)."""
+    claims = []
+    sample_parts = set().union(*[label_parts(v) for vs in labels.values() for v in vs])
+    for category, values in labels.items():
+        claims += [(category, value, 1, 'positive') for value in values]
+        candidates = [v for v in pools[category] if not label_parts(v) & sample_parts]
+        k = min(round(len(values) * neg_ratio), len(candidates))
+        claims += [(category, value, 0, 'absent') for value in rng.sample(candidates, k)]
+        # every constituent of the other role, claimed in this role (with loose claims it would be true)
+        other = ROLE_SWAP.get(category)
+        if other and not ignore_role:
+            own = set().union(*[label_parts(v) for v in values])
+            claims += [(category, value, 0, 'role_swap') for value in labels.get(other, [])
+                       if not label_parts(value) & own]
+    return claims
 
 
 def build_question_set(data, seed=0, neg_ratio=1.0, ignore_role=False):
@@ -51,38 +86,18 @@ def build_question_set(data, seed=0, neg_ratio=1.0, ignore_role=False):
     counts = Counter()
     first = {}
     for ref, labels in zip(data['refs'], data['labels']):
-        labels = {c: sorted({v.strip() for v in vs if v.strip()}) for c, vs in labels.items()}
-        labels = {c: vs for c, vs in labels.items() if vs}
+        labels = normalize_labels(labels)
         key = json.dumps([ref, labels], ensure_ascii=False, sort_keys=True)
         counts[key] += 1
         first.setdefault(key, (ref, labels))
     samples = [{'text': first[k][0], 'labels': first[k][1], 'count': counts[k]} for k in first]
-
-    pools = defaultdict(set)
-    for s in samples:
-        for c, vs in s['labels'].items():
-            pools[c].update(vs)
-    pools = {c: sorted(vs) for c, vs in pools.items()}
+    pools = label_pools(s['labels'] for s in samples)
 
     rng = random.Random(seed)
     questions = []
     for idx, s in enumerate(samples):
-        sample_parts = set().union(*[_parts(v) for vs in s['labels'].values() for v in vs])
-        for category, values in s['labels'].items():
-            for value in values:
-                questions.append({'sample': idx, 'category': category, 'label': value, 'gold': 1, 'kind': 'positive'})
-            candidates = [v for v in pools[category] if not _parts(v) & sample_parts]
-            k = min(round(len(values) * neg_ratio), len(candidates))
-            for value in rng.sample(candidates, k):
-                questions.append({'sample': idx, 'category': category, 'label': value, 'gold': 0, 'kind': 'absent'})
-            # every constituent of the other role, claimed in this role (with loose claims it would be true)
-            other = ROLE_SWAP.get(category)
-            if other and not ignore_role:
-                own = set().union(*[_parts(v) for v in values])
-                for value in s['labels'].get(other, []):
-                    if not _parts(value) & own:
-                        questions.append({'sample': idx, 'category': category, 'label': value, 'gold': 0,
-                                          'kind': 'role_swap'})
+        for category, label, gold, kind in sample_claims(s['labels'], pools, rng, neg_ratio, ignore_role):
+            questions.append({'sample': idx, 'category': category, 'label': label, 'gold': gold, 'kind': kind})
     for uid, q in enumerate(questions):
         q['uid'] = uid
         q['claim'] = build_claim(q['category'], q['label'], ignore_role)
