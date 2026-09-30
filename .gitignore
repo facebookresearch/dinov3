@@ -24,3 +24,5 @@ geo/*.sh
 *.pem
 GPTrequest.py
 *.ini
+geo/eval/reliability/*
+geo/eval/judge_comparison/*

@@ -94,7 +94,8 @@ if __name__ == '__main__':
         start = time.time()
         results = evaluate(LexicalJudge(), data, negatives, 256)
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump({'model': 'lexical', 'seconds': time.time() - start, **slim(results)}, f, ensure_ascii=False)
+            json.dump({'model': 'lexical', 'seconds': time.time() - start, **slim(results)}, f,
+                      ensure_ascii=False, indent=2)
 
     import torch
 
@@ -121,7 +122,7 @@ if __name__ == '__main__':
                   'seconds': time.time() - start, 'peak_vram_gb': torch.cuda.max_memory_allocated() / 2**30,
                   'yes_tokens': yes, 'no_tokens': no, **slim(results)}
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(record, f, ensure_ascii=False)
+            json.dump(record, f, ensure_ascii=False, indent=2)
         print(f"done in {record['seconds']:.0f}s, peak {record['peak_vram_gb']:.2f} GB, "
               f"preds recall {results['preds']['summary']['label_recall']:.4f}, "
               f"refs recall {results['refs']['summary']['label_recall']:.4f}, "

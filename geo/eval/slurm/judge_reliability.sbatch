@@ -33,6 +33,11 @@ MODELS=(
   "Qwen/Qwen2.5-32B-Instruct||16"                 # ~65 GB in bf16: needs an 80 GB GPU, else add --load_in_4bit
   "Qwen/Qwen3-32B||16"
   "Qwen/Qwen2.5-72B-Instruct|--device_map auto|16"  # ~145 GB: spread over the node's GPUs
+  # Llama (gated: accept the license on huggingface.co and run `hf auth login` once, see README)
+  # Meta has no 14B/32B text model; the closest sizes to the Qwen judges are 3B, 8B and 70B
+  "meta-llama/Llama-3.2-3B-Instruct||64"          # ~ Phi-3.5-mini
+  "meta-llama/Llama-3.1-8B-Instruct||64"          # ~ Qwen2.5-7B / Qwen3-8B
+  "meta-llama/Llama-3.3-70B-Instruct|--device_map auto|16"  # ~ Qwen2.5-72B; ~141 GB in bf16
 )
 
 INPUT=${INPUT:-geo/eval/todos.json}
@@ -43,7 +48,7 @@ OUT_DIR=${OUT_DIR:-geo/eval/reliability}
 # source ~/miniconda3/etc/profile.d/conda.sh && conda activate geo
 export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}   # put it on a shared filesystem
 # export HF_HUB_OFFLINE=1                              # compute nodes without internet: pre-download first
-# export HF_TOKEN=...                                  # only for gated models (Llama, Gemma)
+# gated models (Llama) read the token saved by `hf auth login` in $HF_HOME; or set HF_TOKEN here
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 # ------------------------------------------------------------------------------------------------------

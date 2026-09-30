@@ -58,7 +58,14 @@ for i in $INDICES; do
   IFS='|' read -r model flags _ <<< "${MODELS[$i]}"
   if [[ $flags == *--device_map* ]]; then NODE+=("$i"); where="whole node"; else SINGLE+=("$i"); where="one GPU per replica"; fi
   printf '  %2s  %-36s %-22s %s\n' "$i" "$model" "$flags" "($where)"
+  if [[ $model == meta-llama/* ]]; then GATED=1; fi
 done
+
+# gated models need a token: `hf auth login` (saved in $HF_HOME, which the jobs share) or HF_TOKEN
+if [[ -n ${GATED:-} ]] && ! python -c "import sys; from huggingface_hub import get_token; sys.exit(get_token() is None)"; then
+  echo "Llama models are gated: accept their license on huggingface.co, then run 'hf auth login' (or set HF_TOKEN)"
+  exit 1
+fi
 
 join() { local IFS=,; echo "$*"; }
 run() {  # prints the job id; in dry-run mode only shows the command

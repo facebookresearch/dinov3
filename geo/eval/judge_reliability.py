@@ -112,7 +112,7 @@ def load_or_create_questions(args):
     os.makedirs(args.out_dir, exist_ok=True)
     tmp = f'{path}.{os.getpid()}.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(saved, f, ensure_ascii=False)
+        json.dump(saved, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)  # atomic: concurrent writers produce identical content
     return saved
 
