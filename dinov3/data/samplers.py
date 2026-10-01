@@ -186,9 +186,18 @@ class ShardedInfiniteSampler(Sampler):
         )
 
     def __iter__(self):
-        iter_count = self._advance // self._sample_count
+        # advance counts samples consumed by this rank, not by the global
+        # permutation. Shuffled shards drop the remainder; ordered shards
+        # retain it, so their cycle lengths can differ.
+        if self._shuffle:
+            samples_per_iter = self._sample_count // self._step
+        else:
+            samples_per_iter = len(range(self._start, self._sample_count, self._step))
+        if samples_per_iter == 0:
+            raise ValueError("Cannot iterate an empty sampler shard.")
+        iter_count = self._advance // samples_per_iter
         if iter_count > 0:
-            self._advance -= iter_count * self._sample_count
+            self._advance -= iter_count * samples_per_iter
             self._iter_count += iter_count
 
         if self._shuffle:
