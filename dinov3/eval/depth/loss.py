@@ -120,12 +120,17 @@ class SigLoss(nn.Module):
         input = input[valid_mask]
         target = target[valid_mask]
 
+        if input.numel() == 0:
+            return input.sum()
+
         g = torch.log(input + self.eps) - torch.log(target + self.eps)
         Dg = 0.15 * torch.pow(torch.mean(g), 2)
         if self.warm_up and self.warm_up_counter < self.warm_iter:
             self.warm_up_counter += 1
         else:
-            Dg += torch.var(g)
+            # The scale-invariant objective uses a population moment:
+            # mean(g ** 2) - 0.85 * mean(g) ** 2.
+            Dg += torch.var(g, unbiased=False)
         if Dg <= 0:
             return torch.abs(Dg)
         return torch.sqrt(Dg)
