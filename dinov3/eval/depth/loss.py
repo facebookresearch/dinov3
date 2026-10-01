@@ -40,7 +40,7 @@ class GradientLoss(nn.Module):
         gradient_loss = 0
         for input, target, mask in zip(input_downscaled, target_downscaled, mask_downscaled):
             N = torch.sum(mask)
-            d_diff = torch.mul(input - target, mask)
+            d_diff = torch.where(mask, input - target, 0)
 
             v_gradient = torch.abs(d_diff[..., 0:-2, :] - d_diff[..., 2:, :])
             v_mask = torch.mul(mask[..., 0:-2, :], mask[..., 2:, :])
@@ -49,7 +49,7 @@ class GradientLoss(nn.Module):
             h_gradient = torch.abs(d_diff[..., :, 0:-2] - d_diff[..., :, 2:])
             h_mask = torch.mul(mask[..., :, 0:-2], mask[..., :, 2:])
             h_gradient = torch.mul(h_gradient, h_mask)
-            gradient_loss += (torch.sum(h_gradient) + torch.sum(v_gradient)) / N
+            gradient_loss += (torch.sum(h_gradient) + torch.sum(v_gradient)) / N.clamp_min(1)
 
         return gradient_loss
 
@@ -70,8 +70,10 @@ class GradientLogLoss(nn.Module):
         gradient_loss = 0
         for input, target, mask in zip(input_downscaled, target_downscaled, mask_downscaled):
             N = torch.sum(mask)
-            input_log = torch.log(input + self.eps)
-            target_log = torch.log(target + self.eps)
+            # Invalid depths may be non-positive or non-finite. Mask before
+            # logarithms, since multiplying NaN by zero does not remove it.
+            input_log = torch.log(torch.where(mask, input, 0) + self.eps)
+            target_log = torch.log(torch.where(mask, target, 0) + self.eps)
             log_d_diff = input_log - target_log
 
             log_d_diff = torch.mul(log_d_diff, mask)
@@ -83,7 +85,7 @@ class GradientLogLoss(nn.Module):
             h_gradient = torch.abs(log_d_diff[..., :, 0:-2] - log_d_diff[..., :, 2:])
             h_mask = torch.mul(mask[..., :, 0:-2], mask[..., :, 2:])
             h_gradient = torch.mul(h_gradient, h_mask)
-            gradient_loss += (torch.sum(h_gradient) + torch.sum(v_gradient)) / N
+            gradient_loss += (torch.sum(h_gradient) + torch.sum(v_gradient)) / N.clamp_min(1)
 
         return gradient_loss
 
