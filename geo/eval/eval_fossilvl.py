@@ -38,6 +38,8 @@ def labels_by_reference(path):
         data = json.load(f)
     index = defaultdict(set)
     for ref, labels in zip(data['refs'], data['labels']):
+        if not isinstance(ref, str):
+            continue
         index[ref.strip()].add(json.dumps(normalize_labels(labels), ensure_ascii=False, sort_keys=True))
     return index
 
@@ -60,6 +62,13 @@ def load_setting(path, index, max_samples=None):
     for i, (ref, pred, labels) in enumerate(zip(refs, preds, given)):
         if max_samples is not None and i >= max_samples:
             break
+        # empty descriptions can come out of the annotation tables as NaN (a float), not as text
+        if not isinstance(ref, str) or not ref.strip():
+            skipped['reference is not text (e.g. NaN)'] += 1
+            continue
+        if not isinstance(pred, str):
+            skipped['prediction is not text'] += 1
+            continue
         if labels is None:
             options = index.get(ref.strip(), set())
             if len(options) != 1:

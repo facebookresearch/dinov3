@@ -65,6 +65,8 @@ class RLDataset(torch.utils.data.Dataset):
             data = json.load(f)
         by_ref = defaultdict(set)
         for ref, labels in zip(data['refs'], data['labels']):
+            if not isinstance(ref, str):
+                continue
             by_ref[ref.strip()].add(json.dumps(normalize_labels(labels), ensure_ascii=False, sort_keys=True))
         self.pools = label_pools(normalize_labels(labels) for labels in data['labels'])
 
@@ -72,7 +74,12 @@ class RLDataset(torch.utils.data.Dataset):
         skipped = defaultdict(int)
         for image, conversation in zip(base.image, base.conversation):
             conversation = json.loads(conversation)
-            reference = conversation[1]['content'].strip()
+            prompt, reference = conversation[0]['content'], conversation[1]['content']
+            # empty descriptions can come out of the annotation tables as NaN (a float), not as text
+            if not isinstance(prompt, str) or not isinstance(reference, str) or not reference.strip():
+                skipped['prompt or reference is not text (e.g. NaN)'] += 1
+                continue
+            reference = reference.strip()
             options = by_ref.get(reference, set())
             if len(options) != 1:
                 skipped['no labels for the reference' if not options else 'reference with several label sets'] += 1
@@ -81,8 +88,7 @@ class RLDataset(torch.utils.data.Dataset):
             if not labels:
                 skipped['empty labels'] += 1
                 continue
-            self.samples.append({'image': image, 'prompt': conversation[0]['content'], 'reference': reference,
-                                 'labels': labels})
+            self.samples.append({'image': image, 'prompt': prompt, 'reference': reference, 'labels': labels})
         self.skipped = dict(skipped)
 
     def __len__(self):
