@@ -193,8 +193,12 @@ class WarmupMultiStepLR(torch_schedulers.LRScheduler):
         if self.warmup_iters > 0 and self._step_count < self.warmup_iters:
             thelr = optimizer_param_group["max_lr"] * (self._step_count / self.warmup_iters)
         else:
-            if self._step_count >= self.total_steps * self.milestones[self.milestone_index]:
-                self.milestone_index += 1
+            # The phase is a function of the step, not the number of parameter
+            # groups queried. Counting crossings also handles repeated milestones
+            # and the final step without indexing past the milestone list.
+            self.milestone_index = sum(
+                self._step_count >= self.total_steps * milestone for milestone in self.milestones
+            )
             thelr = optimizer_param_group["max_lr"] * (self.gamma**self.milestone_index)
         return thelr
 
