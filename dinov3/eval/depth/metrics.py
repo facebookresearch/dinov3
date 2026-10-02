@@ -78,10 +78,9 @@ def calculate_depth_metrics(
     sq_error_log = error_log**2
     metrics_dict["rmse_log"] = torch.sqrt(sq_error_log.mean()) if "rmse_log" in metric_names else torch.nan
     if "silog" in metric_names:
-        silog = torch.sqrt(torch.mean(sq_error_log) - torch.mean(error_log) ** 2) * 100
-        if torch.isnan(silog):
-            silog = torch.tensor(0)
-        metrics_dict["silog"] = silog
+        # Center before squaring to avoid cancellation between two large moments.
+        # Preserve NaNs from invalid predictions instead of reporting a perfect score.
+        metrics_dict["silog"] = torch.sqrt(torch.var(error_log, correction=0)) * 100
     else:
         metrics_dict["silog"] = torch.nan
     metrics_dict["log_10"] = (
