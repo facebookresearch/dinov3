@@ -26,7 +26,8 @@ class KoLeoLoss(nn.Module):
         # parwise dot products (= inverse distance)
         dots = torch.mm(x, x.t())
         n = x.shape[0]
-        dots.view(-1)[:: (n + 1)].fill_(-1)  # Trick to fill diagonal with -1
+        # Exclude self even when a real neighbor has cosine similarity -1.
+        dots.view(-1)[:: (n + 1)].fill_(-torch.inf)
         _, indices = torch.max(dots, dim=1)  # max inner prod -> min distance
         return indices
 
@@ -60,7 +61,8 @@ class KoLeoLossDistributed(nn.Module):
         # parwise dot products (= inverse distance)
         dots = torch.mm(x, all_x.t())  # local_B x global_B
         local_B, global_B = dots.shape
-        dots.view(-1)[rank * local_B :: (global_B + 1)].fill_(-1)  # Trick to fill diagonal with -1
+        # Exclude self even when a real neighbor has cosine similarity -1.
+        dots.view(-1)[rank * local_B :: (global_B + 1)].fill_(-torch.inf)
         _, indices = torch.topk(dots, dim=1, k=self.topk)  # max inner prod -> min distance
         return indices
 
