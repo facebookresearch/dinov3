@@ -244,7 +244,7 @@ def build_scheduler(
         "LinearLR",
         "PolynomialLR",
     ]:
-        constructor_kwargs.update(dict(total_iters=total_iter))
+        _kwargs.update(dict(total_iters=total_iter))
 
     return constructor_fn(optimizer, **_kwargs)
 
