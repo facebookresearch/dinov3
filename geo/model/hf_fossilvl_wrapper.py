@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from transformers import PreTrainedModel, PretrainedConfig, ProcessorMixin, ImageProcessingMixin
 from PIL import Image
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
-from .fossilVL import FossilVL
+from .fossilVL import FossilVL, load_checkpoint
 
 
 class ImageProcessorWrapper(ImageProcessingMixin):
@@ -100,8 +100,9 @@ class FossilVLForCausalLM(PreTrainedModel):
 
         # underlying multimodal model
         self.fossil = FossilVL(fossil_conf)
-        ckpt = torch.load(os.path.join(fossil_conf.save_path, f'last_checkpoint.pt'), map_location=torch.device('cpu'))
-        self.fossil.load_state_dict(ckpt)
+        if fossil_conf.decoder.apply_lora:
+            self.fossil.decoder.apply_lora(fossil_conf)
+        load_checkpoint(self.fossil, os.path.join(fossil_conf.save_path, f'last_checkpoint.pt'))
         
         # value head maps decoder hidden states -> scalar values (per token)
         decoder_dim = getattr(self.fossil.decoder, "dim", None)

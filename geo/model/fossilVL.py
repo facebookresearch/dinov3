@@ -9,6 +9,45 @@ from torch.distributed.fsdp import fully_shard, FSDPModule
 from torch.distributed.tensor import DTensor
 from torch.distributed.device_mesh import init_device_mesh
 
+CHECKPOINT_FORMAT = 'trainable'
+
+
+def checkpoint_state_dict(model, state_dict=None):
+    """The part of the state dict a checkpoint needs: trainable parameters, buffers, LoRA adapters, the projection and
+    every weight the model was loaded with (load_checkpoint), e.g. the SFT projection when it is frozen during RL.
+    Frozen pretrained encoder/decoder weights are left out: FossilVL(conf) builds them again from their sources."""
+    state_dict = model.state_dict() if state_dict is None else state_dict
+    frozen = {name for name, p in model.named_parameters() if not p.requires_grad}
+    loaded = getattr(model, 'loaded_keys', set())
+    return {k: v for k, v in state_dict.items()
+            if k not in frozen or 'lora_' in k or k.startswith('projection.') or k in loaded}
+
+
+def save_checkpoint(model, path, state_dict=None):
+    """Saves checkpoint_state_dict; state_dict is the full one when it was gathered elsewhere (e.g. from FSDP)."""
+    tmp = path + '.tmp'
+    torch.save({'format': CHECKPOINT_FORMAT, 'state_dict': checkpoint_state_dict(model, state_dict)}, tmp)
+    os.replace(tmp, path)  # never leaves a half-written checkpoint behind
+
+
+def load_checkpoint(model, path):
+    """Loads a checkpoint of save_checkpoint, or a full state dict as written before it. LoRA must already be applied
+    (decoder.apply_lora) when the checkpoint has adapters."""
+    ckpt = torch.load(path, map_location='cpu')
+    if isinstance(ckpt, dict) and ckpt.get('format') == CHECKPOINT_FORMAT:
+        state_dict = ckpt['state_dict']
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        # the frozen pretrained weights are expected to be missing, the trained ones are not
+        lost = [k for k in missing if 'lora_' in k or k.startswith('projection.')]
+        if unexpected or lost:
+            raise RuntimeError(f'{path} does not match the model: unexpected keys {unexpected[:5]}, '
+                               f'missing trained keys {lost[:5]} (is LoRA applied as in the config?)')
+    else:
+        state_dict = ckpt
+        model.load_state_dict(state_dict)
+    model.loaded_keys = set(state_dict)
+    return model
+
 
 class FossilVL(torch.nn.Module):
     def __init__(self, conf):

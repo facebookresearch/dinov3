@@ -1,6 +1,6 @@
 from torch.optim import AdamW
 from dataset import ConversationDataset, DatasetBatchSampler, conversation_collate, DistributedDatasetBatchSampler
-from model.fossilVL import FossilVL
+from model.fossilVL import FossilVL, save_checkpoint
 from omegaconf import OmegaConf
 import argparse
 import torch
@@ -179,6 +179,11 @@ if __name__ == '__main__':
     model = FossilVL(conf)
     # model.to(torch.bfloat16)
 
+    if conf.decoder.apply_lora:
+        # before FSDP and the optimizer, so the adapters are sharded and optimized with the rest; lora_B starts at
+        # zero, so the output does not change until stage 2 trains them (stage 1 keeps the decoder frozen)
+        model.decoder.apply_lora(conf)
+
     if "LOCAL_RANK" in os.environ.keys():
         # using torchrun multi gpu
         fsdp_kwargs = {
@@ -230,16 +235,13 @@ if __name__ == '__main__':
         param.requires_grad = not conf.train.stage2.frozen_encoder
 
 
-    # adding lora to a fsdp model will end in error if base model dtype if different from fsdp dtype, lora will use the same dtype as base model 
+    # LoRA was applied before FSDP; only the adapters of the decoder are trained
     if hasattr(model.decoder.model, "peft_config"):
         for name, param in model.decoder.named_parameters():
             param.requires_grad = False
 
-        model.decoder.model.set_adapter("default") 
+        model.decoder.model.set_adapter("default")
         model.decoder.model.enable_adapters()
-
-    elif conf.decoder.apply_lora:
-        model.decoder.apply_lora(conf)
 
     for group in optim.param_groups:
         group['lr'] = conf.train.stage2.learning_rate
@@ -274,10 +276,13 @@ if __name__ == '__main__':
             )
         
         else:
-            model_state_dict = model.model.state_dict()
-        
-        if val_loss <= min(log['validation loss']):
-            torch.save(model_state_dict, os.path.join(conf.save_path, f'best_checkpoint.pt'))
-            
-        torch.save(model_state_dict, os.path.join(conf.save_path, f'last_checkpoint.pt'))
+            model_state_dict = model.state_dict()
+
+        # with FSDP only rank 0 gets the full state dict (the other ranks get an empty one), so only rank 0 saves;
+        # the checkpoints keep only the trained weights (see save_checkpoint), e.g. the LoRA adapters, not the decoder
+        if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+            if val_loss <= min(log['validation loss']):
+                save_checkpoint(model, os.path.join(conf.save_path, f'best_checkpoint.pt'), model_state_dict)
+
+            save_checkpoint(model, os.path.join(conf.save_path, f'last_checkpoint.pt'), model_state_dict)
         

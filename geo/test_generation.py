@@ -1,5 +1,5 @@
 from omegaconf import OmegaConf
-from model.fossilVL import FossilVL
+from model.fossilVL import FossilVL, load_checkpoint
 import torch
 import os 
 import json
@@ -16,8 +16,7 @@ if __name__ == '__main__':
     if conf.decoder.apply_lora:
         model.decoder.apply_lora(conf)
 
-    ckpt = torch.load(os.path.join(model_path, 'checkpoint.pt'), map_location=torch.device('cpu'))
-    model.load_state_dict(ckpt)
+    load_checkpoint(model, os.path.join(model_path, 'checkpoint.pt'))
     model.to(device)
 
     model.eval()

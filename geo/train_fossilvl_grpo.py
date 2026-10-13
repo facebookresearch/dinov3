@@ -50,7 +50,7 @@ sys.path.insert(0, os.path.join(GEO, 'eval'))
 from dataset import ConversationDataset  # noqa: E402
 from eval_labels_llm import HFJudge, build_claim, score_pairs  # noqa: E402
 from judge_reliability import label_pools, normalize_labels, sample_claims  # noqa: E402
-from model.fossilVL import FossilVL  # noqa: E402
+from model.fossilVL import FossilVL, load_checkpoint, save_checkpoint  # noqa: E402
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -126,8 +126,7 @@ def load_fossil(conf, ckpt_path):
     model = FossilVL(conf)
     if not hasattr(model.decoder.model, 'peft_config') and conf.decoder.apply_lora:
         model.decoder.apply_lora(conf)
-    model.load_state_dict(torch.load(ckpt_path, map_location='cpu'))
-    return model
+    return load_checkpoint(model, ckpt_path)
 
 
 def encoder_size(conf, image_path):
@@ -362,9 +361,8 @@ def policy_step(step, batch, model, ref, conf, pools, optimizer, params, env, ar
 
 
 def save(model, optimizer, step, args):
-    tmp = os.path.join(args.out_dir, 'last_checkpoint.pt.tmp')
-    torch.save(model.state_dict(), tmp)
-    os.replace(tmp, os.path.join(args.out_dir, 'last_checkpoint.pt'))
+    # trained weights only (e.g. LoRA adapters and projection), plus every weight loaded from the SFT checkpoint
+    save_checkpoint(model, os.path.join(args.out_dir, 'last_checkpoint.pt'))
     torch.save({'step': step, 'optimizer': optimizer.state_dict()}, os.path.join(args.out_dir, 'rl_state.pt'))
 
 
@@ -392,7 +390,7 @@ def run_policy(env, args):
     start = 0
     state_path = os.path.join(args.out_dir, 'rl_state.pt')
     if args.resume and os.path.exists(state_path):
-        model.load_state_dict(torch.load(os.path.join(args.out_dir, 'last_checkpoint.pt'), map_location='cpu'))
+        load_checkpoint(model, os.path.join(args.out_dir, 'last_checkpoint.pt'))
         state = torch.load(state_path, map_location='cpu')
         optimizer.load_state_dict(state['optimizer'])
         start = state['step']
