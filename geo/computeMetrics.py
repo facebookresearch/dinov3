@@ -92,7 +92,7 @@ if __name__ == "__main__":
     # arg = '/nethome/recpinfo/users/fibz/data/checkpoints/capincho/nwpu/*llama-base32-global/generated_captions.json'
     # arg = '/nethome/recpinfo/users/fibz/data/checkpoints/capincho/geov4/*DINO1024*/generated_captions.json'
     # arg = "/nethome/recpinfo/users/fibz/data/checkpoints/capincho/nwpu/*clipb32-*/generated_captions.json"
-    arg = "/nethome/recpinfo/users/fibz/data/checkpoints/fossil/geov4/*DINO2048*/generated_captions*.json"
+    arg = "/nethome/recpinfo/users/fibz/data/checkpoints/fossil_RL/*/generated_captions*.json"
     paths = glob(arg)
     
     for path in paths:

@@ -30,6 +30,8 @@ class ConversationDataset(Dataset):
             self.root = root
             self.image = []
             self.conversation = []
+            self.labels = []  # per sample, None when the split has no labels
+            self.campos = []
             self.sizes = []
             print('campo:', campo)
             print('groups', groups)
@@ -51,6 +53,8 @@ class ConversationDataset(Dataset):
                                 raise ValueError('there is no image in the dataset')
 
                             self.conversation.append(json.dumps(sample['conversation']))
+                            self.labels.append(sample.get('labels'))
+                            self.campos.append(sample.get('campo'))
 
                 if 'size' in sample.keys():
                     self.sizes.append(sample['size'])

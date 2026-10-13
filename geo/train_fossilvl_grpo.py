@@ -20,11 +20,12 @@ The captioning model starts from an SFT output folder (config.yaml + <ckpt>_chec
 trainFossilVL.py). --out_dir receives config.yaml and last_checkpoint.pt in the same format, so generate.py
 works on it unchanged, plus log.jsonl, samples.jsonl and rl_state.pt (for --resume).
 
-Labels are matched to the training conversations by their reference description (the assistant turn), using a
-file with 'refs' and 'labels' lists such as eval/todos.json.
+Labels are the 'labels' of each sample of the split file (--split_file, or the --split of config.yaml).
+--categories keeps only some label categories; --labels instead matches the conversations by their reference
+description (the assistant turn) to a file with 'refs' and 'labels' lists such as eval/todos.json.
 
-    torchrun --nproc_per_node 4 geo/train_fossilvl_grpo.py --model <sft dir> --labels geo/eval/todos.json \
-        --out_dir <rl dir>
+    torchrun --nproc_per_node 4 geo/train_fossilvl_grpo.py --model <sft dir> --out_dir <rl dir>
+    torchrun --nproc_per_node 4 geo/train_fossilvl_grpo.py --model <sft dir> --out_dir <rl dir> --campo porosity
 See geo/slurm/train_grpo.sbatch.
 """
 import argparse
@@ -57,22 +58,27 @@ Image.MAX_IMAGE_PIXELS = None
 # ---------------------------------------------------------------------------------------------------- data
 
 class RLDataset(torch.utils.data.Dataset):
-    """Image, prompt, reference and annotated labels of every conversation of a split that has labels."""
+    """Image, prompt, reference and annotated labels of every conversation of a split that has labels.
 
-    def __init__(self, conf, split_path, labels_path, campo=None):
+    Labels come from the 'labels' of each split sample, or, with labels_path, from a file with 'refs' and 'labels'
+    lists matched by reference text. categories keeps only those label categories. The absent-label negatives are
+    drawn from every label of the kept samples."""
+
+    def __init__(self, conf, split_path, labels_path=None, campo=None, categories=None):
         base = ConversationDataset(conf.data.root, split_path, groups=conf.data.get('groups'), campo=campo)
-        with open(labels_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        by_ref = defaultdict(set)
-        for ref, labels in zip(data['refs'], data['labels']):
-            if not isinstance(ref, str):
-                continue
-            by_ref[ref.strip()].add(json.dumps(normalize_labels(labels), ensure_ascii=False, sort_keys=True))
-        self.pools = label_pools(normalize_labels(labels) for labels in data['labels'])
+        by_ref = None
+        if labels_path:
+            with open(labels_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            by_ref = defaultdict(set)
+            for ref, labels in zip(data['refs'], data['labels']):
+                if not isinstance(ref, str):
+                    continue
+                by_ref[ref.strip()].add(json.dumps(normalize_labels(labels), ensure_ascii=False, sort_keys=True))
 
         self.samples = []
         skipped = defaultdict(int)
-        for image, conversation in zip(base.image, base.conversation):
+        for image, conversation, labels, sample_campo in zip(base.image, base.conversation, base.labels, base.campos):
             conversation = json.loads(conversation)
             prompt, reference = conversation[0]['content'], conversation[1]['content']
             # empty descriptions can come out of the annotation tables as NaN (a float), not as text
@@ -80,16 +86,25 @@ class RLDataset(torch.utils.data.Dataset):
                 skipped['prompt or reference is not text (e.g. NaN)'] += 1
                 continue
             reference = reference.strip()
-            options = by_ref.get(reference, set())
-            if len(options) != 1:
-                skipped['no labels for the reference' if not options else 'reference with several label sets'] += 1
+            if by_ref is not None:
+                options = by_ref.get(reference, set())
+                if len(options) != 1:
+                    skipped['no labels for the reference' if not options else 'reference with several label sets'] += 1
+                    continue
+                labels = json.loads(next(iter(options)))
+            elif labels is None:
+                skipped['no labels in the split'] += 1
                 continue
-            labels = json.loads(next(iter(options)))
+            labels = normalize_labels(labels)
+            if categories:
+                labels = {c: vs for c, vs in labels.items() if c in categories}
             if not labels:
-                skipped['empty labels'] += 1
+                skipped['empty labels' if not categories else 'no labels of the selected categories'] += 1
                 continue
-            self.samples.append({'image': image, 'prompt': prompt, 'reference': reference, 'labels': labels})
+            self.samples.append({'image': image, 'prompt': prompt, 'reference': reference, 'labels': labels,
+                                 'campo': sample_campo})
         self.skipped = dict(skipped)
+        self.pools = label_pools(s['labels'] for s in self.samples)
 
     def __len__(self):
         return len(self.samples)
@@ -349,8 +364,8 @@ def save(model, optimizer, step, args):
 
 def run_policy(env, args):
     conf = OmegaConf.load(os.path.join(args.model, 'config.yaml'))
-    split = {'train': conf.data.train, 'val': conf.data.val, 'test': conf.data.test}[args.split]
-    dataset = RLDataset(conf, split, args.labels, campo=args.campo)
+    split = args.split_file or {'train': conf.data.train, 'val': conf.data.val, 'test': conf.data.test}[args.split]
+    dataset = RLDataset(conf, split, args.labels, campo=args.campo, categories=args.categories)
     steps_per_epoch = len(dataset) // (args.batch_size * len(env['policy_ranks']))
     if steps_per_epoch == 0:
         sys.exit(f'{len(dataset)} samples with labels: fewer than one step')
@@ -385,7 +400,11 @@ def run_policy(env, args):
         with open(os.path.join(args.out_dir, 'rl_args.json'), 'w', encoding='utf-8') as f:
             json.dump(vars(args), f, indent=2)
         n_train = sum(p.numel() for p in params)
-        print(f'{len(dataset)} samples with labels (skipped: {dataset.skipped}); {steps_per_epoch} steps per epoch, '
+        campos = defaultdict(int)
+        for s in dataset.samples:
+            campos[s['campo']] += 1
+        print(f'{len(dataset)} samples with labels {dict(campos)} (skipped: {dataset.skipped}); '
+              f'categories: {sorted(dataset.pools)}; {steps_per_epoch} steps per epoch, '
               f'steps {start}-{total_steps}; {n_train:,} trainable parameters; policy ranks {env["policy_ranks"]}, '
               f'judge ranks {env["judge_ranks"]}', flush=True)
     dist.broadcast_object_list([start, total_steps], src=env['policy_ranks'][0])  # tells the judges how long
@@ -438,9 +457,13 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     p.add_argument('--model', required=True, help='SFT output folder with config.yaml and <ckpt>_checkpoint.pt')
     p.add_argument('--ckpt', default='best', choices=['best', 'last'])
-    p.add_argument('--labels', default='geo/eval/todos.json', help="json with 'refs' and 'labels' lists")
+    p.add_argument('--labels', default=None,
+                   help="json with 'refs' and 'labels' lists matched by reference text (e.g. geo/eval/todos.json); "
+                        "by default the labels of the split samples are used")
     p.add_argument('--split', default='train', choices=['train', 'val', 'test'])
+    p.add_argument('--split_file', default=None, help='split json to use instead of the one of --split in config.yaml')
     p.add_argument('--campo', default=None)
+    p.add_argument('--categories', nargs='+', default=None, help='label categories used in the reward (default: all)')
     p.add_argument('--out_dir', required=True)
     p.add_argument('--resume', action='store_true', help='continue from out_dir/rl_state.pt if present')
 

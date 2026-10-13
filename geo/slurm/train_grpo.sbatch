@@ -3,6 +3,8 @@
 # One torchrun per node, 4 processes: local rank 0 trains the captioning model, local ranks 1-3 each hold a
 # replica of the judge. More nodes add both (use --nodes=N). Submit from the repository root:
 #   SFT=/path/to/sft_output OUT=/path/to/rl_output sbatch geo/slurm/train_grpo.sbatch
+# Labels come from the split file; LABELS=geo/eval/todos.json matches them by reference text instead, CAMPO=porosity
+# trains on one description type, and extra arguments go to the script (e.g. --categories "Tipo(s) de Poro(s)").
 # Re-submitting with the same OUT resumes from the last checkpoint.
 #SBATCH --job-name=fossilvl-grpo
 #SBATCH --nodes=1
@@ -33,19 +35,23 @@ set -u
 SFT=${SFT:?set SFT to the SFT output folder (config.yaml + best_checkpoint.pt)}
 OUT=${OUT:?set OUT to the RL output folder}
 JUDGE=${JUDGE:-Qwen/Qwen2.5-32B-Instruct}   # lowest false-positive rate in the reliability study
-LABELS=${LABELS:-geo/eval/todos.json}
+LABELS=${LABELS:-}
+CAMPO=${CAMPO:-}
+OPTIONAL=()
+[ -n "$LABELS" ] && OPTIONAL+=(--labels "$LABELS")
+[ -n "$CAMPO" ] && OPTIONAL+=(--campo "$CAMPO")
 
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 mkdir -p logs "$OUT"
-echo "GRPO: sft=$SFT out=$OUT judge=$JUDGE nodes=$SLURM_NNODES master=$MASTER_ADDR"
+echo "GRPO: sft=$SFT out=$OUT judge=$JUDGE labels=${LABELS:-split} campo=${CAMPO:-all} nodes=$SLURM_NNODES master=$MASTER_ADDR"
 
 srun torchrun \
   --nnodes="$SLURM_NNODES" --nproc_per_node=4 \
   --rdzv_id="$SLURM_JOB_ID" --rdzv_backend=c10d --rdzv_endpoint="$MASTER_ADDR:29500" \
   geo/train_fossilvl_grpo.py \
-    --model "$SFT" --ckpt best --labels "$LABELS" --out_dir "$OUT" --resume \
+    --model "$SFT" --ckpt best ${OPTIONAL[@]+"${OPTIONAL[@]}"} --out_dir "$OUT" --resume \
     --judge "$JUDGE" --policy_gpus_per_node 1 --judge_batch_size 32 \
     --batch_size 4 --num_generations 8 --epochs 1 \
     --lr 1e-6 --beta 0.04 --max_new_tokens 160 \
     --neg_ratio 1.0 --false_weight 1.0 \
-    --save_every 50 --log_samples_every 10
+    --save_every 50 --log_samples_every 10 "$@"
