@@ -16,7 +16,7 @@ heads.sh
 features.sh
 
 geo/eval/reliability/
-
+resultados
 # Ignore swap files
 *.swp
 # Ignore vscode directory

@@ -25,7 +25,8 @@ def conversation_collate(batch):
 
 
 class ConversationDataset(Dataset):
-    def __init__(self, root, annotation, groups=None, max_size=20000000, min_size=224, campo=None):
+    def __init__(self, root, annotation, groups=None, max_size=20000000, min_size=224, campo=None, campos=None):
+            # campo: a single description type; campos: a list of them. Both None keeps every sample
             data = json.load(open(annotation, 'r'))
             self.root = root
             self.image = []
@@ -33,13 +34,14 @@ class ConversationDataset(Dataset):
             self.labels = []  # per sample, None when the split has no labels
             self.campos = []
             self.sizes = []
-            print('campo:', campo)
+            selected = set(campos or []) | ({campo} if campo is not None else set())
+            print('campos:', sorted(selected) if selected else 'all')
             print('groups', groups)
 
             for sample in data:
                 if 'user_group' not in sample.keys() or sample['user_group'] in groups:
                     if 'size' not in sample.keys() or (sample['size'] >= min_size and sample['size'] < max_size):
-                        if campo is None or ('campo' in sample.keys() and campo == sample['campo']):
+                        if not selected or sample.get('campo') in selected:
                             if 'cd_guid' in sample:
                                 self.image.append(os.path.join(self.root, '{}.png'.format(sample['cd_guid'])))
 
@@ -55,9 +57,9 @@ class ConversationDataset(Dataset):
                             self.conversation.append(json.dumps(sample['conversation']))
                             self.labels.append(sample.get('labels'))
                             self.campos.append(sample.get('campo'))
-
-                if 'size' in sample.keys():
-                    self.sizes.append(sample['size'])
+                            # only for kept samples, so sizes[i] belongs to image[i]
+                            if 'size' in sample.keys():
+                                self.sizes.append(sample['size'])
 
     def __getitem__(self, index):
         payload = {

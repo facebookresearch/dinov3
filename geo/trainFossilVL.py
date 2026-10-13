@@ -59,7 +59,8 @@ if __name__ == '__main__':
     parser.add_argument('--conf', '-c', type=str, default='geo/config/base.yaml')
     parser.add_argument('--save_path', '-s', type=str, default=None)
     parser.add_argument('--config', '-w', type=str, default=None)
-    parser.add_argument('--campo', '-f', type=str, default=None)
+    parser.add_argument('--campos', '--campo', '-f', nargs='+', default=None,
+                        help='description types to train on, e.g. composition porosity (default: all)')
     parser.add_argument('--average_local', default=False, action='store_true', help='average local patch embeddings')
 
     args = parser.parse_args()
@@ -72,6 +73,7 @@ if __name__ == '__main__':
         conf.encoder.config_path = args.config
 
     conf.encoder.average_patch = args.average_local
+    conf.data.campos = args.campos  # recorded in the saved config.yaml
 
     os.makedirs(conf.save_path, exist_ok=True)
     print(conf.save_path)
@@ -100,14 +102,14 @@ if __name__ == '__main__':
             conf.data.root, 
             conf.data.train, 
             groups=conf.data.groups if hasattr(conf.data, 'groups') else None,
-            campo=args.campo,
+            campos=args.campos,
             )
 
         val_dataset = ConversationDataset(
             conf.data.root, 
             conf.data.val,
             groups=conf.data.groups if hasattr(conf.data, 'groups') else None,
-            campo=args.campo,
+            campos=args.campos,
             )
 
         train_loader = train_dataset.get_loader(conversation_collate, conf.train.batch_size, True)
@@ -119,7 +121,7 @@ if __name__ == '__main__':
             conf.data.root, 
             conf.data.train,
             groups=conf.data.groups,
-            campo=args.campo,
+            campos=args.campos,
             min_size=max(conf.encoder.size),
             )
 
@@ -127,7 +129,7 @@ if __name__ == '__main__':
             conf.data.root, 
             conf.data.train, 
             groups=conf.data.groups,
-            campo=args.campo,
+            campos=args.campos,
             min_size=min(conf.encoder.size),
             max_size=max(conf.encoder.size),
             )
@@ -139,7 +141,7 @@ if __name__ == '__main__':
             conf.data.root, 
             conf.data.val,
             groups=conf.data.groups,
-            campo=args.campo,
+            campos=args.campos,
             min_size=min(conf.encoder.size),
             max_size=max(conf.encoder.size),
             )
@@ -149,7 +151,7 @@ if __name__ == '__main__':
             conf.data.val,
             groups=conf.data.groups,
             min_size=max(conf.encoder.size),
-            campo=args.campo,
+            campos=args.campos,
             )
         
         val_dataset = ConcatDataset([val_dataset1, val_dataset2])

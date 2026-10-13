@@ -3,8 +3,9 @@
 # One torchrun per node, 4 processes: local rank 0 trains the captioning model, local ranks 1-3 each hold a
 # replica of the judge. More nodes add both (use --nodes=N). Submit from the repository root:
 #   SFT=/path/to/sft_output OUT=/path/to/rl_output sbatch geo/slurm/train_grpo.sbatch
-# Labels come from the split file; LABELS=geo/eval/todos.json matches them by reference text instead, CAMPO=porosity
-# trains on one description type, and extra arguments go to the script (e.g. --categories "Tipo(s) de Poro(s)").
+# Labels come from the split file; LABELS=geo/eval/todos.json matches them by reference text instead,
+# CAMPOS="composition porosity" trains on those description types only, and extra arguments go to the script
+# (e.g. --categories "Tipo(s) de Poro(s)").
 # Re-submitting with the same OUT resumes from the last checkpoint.
 #SBATCH --job-name=fossilvl-grpo
 #SBATCH --nodes=1
@@ -36,14 +37,17 @@ SFT=${SFT:?set SFT to the SFT output folder (config.yaml + best_checkpoint.pt)}
 OUT=${OUT:?set OUT to the RL output folder}
 JUDGE=${JUDGE:-Qwen/Qwen2.5-32B-Instruct}   # lowest false-positive rate in the reliability study
 LABELS=${LABELS:-}
-CAMPO=${CAMPO:-}
+CAMPOS=${CAMPOS:-}   # space-separated
 OPTIONAL=()
 [ -n "$LABELS" ] && OPTIONAL+=(--labels "$LABELS")
-[ -n "$CAMPO" ] && OPTIONAL+=(--campo "$CAMPO")
+if [ -n "$CAMPOS" ]; then
+  read -ra CAMPO_LIST <<< "$CAMPOS"
+  OPTIONAL+=(--campos "${CAMPO_LIST[@]}")
+fi
 
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 mkdir -p logs "$OUT"
-echo "GRPO: sft=$SFT out=$OUT judge=$JUDGE labels=${LABELS:-split} campo=${CAMPO:-all} nodes=$SLURM_NNODES master=$MASTER_ADDR"
+echo "GRPO: sft=$SFT out=$OUT judge=$JUDGE labels=${LABELS:-split} campos=${CAMPOS:-all} nodes=$SLURM_NNODES master=$MASTER_ADDR"
 
 srun torchrun \
   --nnodes="$SLURM_NNODES" --nproc_per_node=4 \
