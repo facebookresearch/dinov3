@@ -179,9 +179,10 @@ if __name__ == '__main__':
     model = FossilVL(conf)
     # model.to(torch.bfloat16)
 
-    if conf.decoder.apply_lora:
+    if conf.decoder.apply_lora and not hasattr(model.decoder.model, "peft_config"):
         # before FSDP and the optimizer, so the adapters are sharded and optimized with the rest; lora_B starts at
-        # zero, so the output does not change until stage 2 trains them (stage 1 keeps the decoder frozen)
+        # zero, so the output does not change until stage 2 trains them (stage 1 keeps the decoder frozen).
+        # A decoder loaded with an adapter (e.g. from continued pre-training) keeps that one and trains it instead
         model.decoder.apply_lora(conf)
 
     if "LOCAL_RANK" in os.environ.keys():

@@ -100,7 +100,7 @@ class FossilVLForCausalLM(PreTrainedModel):
 
         # underlying multimodal model
         self.fossil = FossilVL(fossil_conf)
-        if fossil_conf.decoder.apply_lora:
+        if fossil_conf.decoder.apply_lora and not hasattr(self.fossil.decoder.model, 'peft_config'):
             self.fossil.decoder.apply_lora(fossil_conf)
         load_checkpoint(self.fossil, os.path.join(fossil_conf.save_path, f'last_checkpoint.pt'))
         

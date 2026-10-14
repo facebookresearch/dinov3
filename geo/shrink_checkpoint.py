@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
     conf = OmegaConf.load(os.path.join(args.model, 'config.yaml'))
     model = FossilVL(conf)  # as load_checkpoint's callers build it
-    if conf.decoder.apply_lora:
+    if conf.decoder.apply_lora and not hasattr(model.decoder.model, 'peft_config'):
         model.decoder.apply_lora(conf)
     base = model.state_dict()
 

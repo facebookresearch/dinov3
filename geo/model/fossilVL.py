@@ -1,6 +1,7 @@
 import torch
 import sys
 import os
+from PIL import Image
 sys.path.append(os.path.normpath(os.path.join(__file__, '../')))
 from encoder import encoder_factory
 from decoder import decoder_factory
@@ -54,24 +55,31 @@ class FossilVL(torch.nn.Module):
         super().__init__()
         self.encoder = encoder_factory(conf)
         self.decoder = decoder_factory(conf)
-        self.projection = multimodal_factory(conf.multimodal, self.encoder.dim, self.decoder.dim)
         self.use_grid = False if 'mapper' in conf.multimodal else True
+        # with use_grid the projection reads patch tokens, which can be narrower than the global embedding (DINOtxt)
+        input_dim = getattr(self.encoder, 'grid_dim', self.encoder.dim) if self.use_grid else self.encoder.dim
+        self.projection = multimodal_factory(conf.multimodal, input_dim, self.decoder.dim)
         self.encoder
         self.log_first = True
 
+    def input_size(self, sizes):
+        """Encoder input size for images of these sizes (the 'size' of the samples): with several encoder sizes, the
+        largest one when an image is at least that large, else the smallest one; None with a single encoder size."""
+        if len(self.encoder.im_size) == 1:
+            return None
+        return max(self.encoder.im_size) if max(sizes) >= max(self.encoder.im_size) else min(self.encoder.im_size)
+
+    def image_tensors(self, images, size):
+        # CLIP's get_image_tensors has no size argument (single size only)
+        if size is None:
+            return self.encoder.get_image_tensors(images)
+        return self.encoder.get_image_tensors(images, size=size)
+
     def forward(self, batch):
         # print('IM_SIZE', type(self.encoder.im_size))
-        if len(self.encoder.im_size) > 1:
-            if max(batch['size']) >= max(self.encoder.im_size):
-                size = max(self.encoder.im_size)
-            else:
-                size = min(self.encoder.im_size)
+        size = self.input_size(batch['size']) if len(self.encoder.im_size) > 1 else None
+        image_tensors = self.image_tensors(batch['image'], size)
 
-            image_tensors = self.encoder.get_image_tensors(batch['image'], size=size)
-
-        else:
-            image_tensors = self.encoder.get_image_tensors(batch['image'], )
-                
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
         image_embeddings = self.projection(image_embeddings)
 
@@ -87,9 +95,16 @@ class FossilVL(torch.nn.Module):
         
         return self.decoder(model_inputs)
     
-    def generate(self, image, prompt, num_beams=10, do_sample=False, max_new_tokens=100, **kwargs):
+    def generate(self, image, prompt, num_beams=10, do_sample=False, max_new_tokens=100, size=None, **kwargs):
+        """size: the 'size' of the sample(s), as in training; without it, the shorter side of each image file."""
         device = self.decoder.model.device
-        image_tensors = self.encoder.get_image_tensors(image).to(device)
+        if len(self.encoder.im_size) > 1:
+            if size is None:
+                size = [min(Image.open(i).size) if isinstance(i, str) else min(i.size) for i in image]
+            size = self.input_size(size if isinstance(size, (list, tuple)) else [size])
+        else:
+            size = None  # single encoder size: the encoder's own
+        image_tensors = self.image_tensors(image, size).to(device)
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
         image_embeddings = self.projection(image_embeddings)
 

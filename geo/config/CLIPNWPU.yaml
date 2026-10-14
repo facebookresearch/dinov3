@@ -10,7 +10,7 @@ decoder:
   lora_rank: 16 
   lora_alpha : 32
   apply_lora: False
-multimodal: 'mapper:20'  # mapper, merger, projector,
+multimodal: 'mapper:20'  # mapper:<k>, merger:<s>, projector, attention:<k>, qformer:<queries>[:<layers>[:<width>]]
 train:
   batch_size: 8
   stage1:

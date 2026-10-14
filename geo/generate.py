@@ -56,7 +56,8 @@ if __name__ == '__main__':
         image = batch['image'][0]
         prompt = batch['conversation'][0][0]['content']
         target = batch['conversation'][0][1]['content']
-        output = model.generate([image], prompt)
+        # the sample's size picks the encoder input size, as in training
+        output = model.generate([image], prompt, size=batch['size'][0] if 'size' in batch else None)
         results['generated'].append({'reference': target, 'prediction': output, 'prompt': prompt, 'image': image})
 
         i += 1

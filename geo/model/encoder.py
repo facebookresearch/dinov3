@@ -159,7 +159,8 @@ class Dinotxt(Fossil):
         )
         
         self.model = model
-        self.dim = 2048 if conf.encoder.average_patch else 1024 
+        self.dim = 2048 if conf.encoder.average_patch else 1024
+        self.grid_dim = 1024  # width of each patch token (return_grid=True)
         self.im_size = conf.encoder.size
         self.encode_image = model.encode_image
 
@@ -220,7 +221,10 @@ class Dinotxt(Fossil):
         device = self.model.backbone.patch_embed.proj.weight.device
         dtype = self.model.backbone.patch_embed.proj.weight.dtype
         if return_grid:
-            raise NotImplementedError('return grid not implemented for Dinotxt model')
+            # patch tokens after the vision head (b x patches x 1024), the ones encode_image averages into its second
+            # half; for projections that read every patch (e.g. qformer)
+            _, patch_tokens, _ = self.model(inputs.to(device, dtype=dtype))
+            return patch_tokens
 
         x = self.encode_image(inputs.to(device, dtype=dtype))
         if self.dim == 1024: # only classification embedding

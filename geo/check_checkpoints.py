@@ -2,13 +2,16 @@
 Checks whether the parts of FossilVL checkpoints were actually trained.
 
 From the checkpoint alone:
-    LoRA adapters  lora_B starts at zero, so an all-zero lora_B was never trained. For trained adapters the update
-                   scale * B @ A is reported, relative to the frozen layer weight when the checkpoint has it (full
-                   checkpoints), with scale = lora_alpha / lora_rank from config.yaml.
+    LoRA adapters  lora_B of a new adapter starts at zero, so an all-zero lora_B was never trained. A decoder loaded
+                   with a pretrained adapter (e.g. from continued pre-training) has non-zero lora_B before training,
+                   so only --compare_base tells whether this run changed it. The update scale * B @ A is reported,
+                   relative to the frozen layer weight when the checkpoint has it (full checkpoints), with
+                   scale = lora_alpha / lora_rank from config.yaml.
     sizes          tensors and MB per part (encoder, decoder base, decoder LoRA, projection), so full and small
                    checkpoints (model/fossilVL.save_checkpoint) can be told apart.
-With --compare_base the model is built from config.yaml as the loaders do (pretrained encoder/decoder, LoRA applied)
-and every encoder/decoder weight is compared with the pretrained one; this needs memory for about two models.
+With --compare_base the model is built from config.yaml as the loaders do (pretrained encoder/decoder with any adapter
+they are loaded with, LoRA applied) and every encoder/decoder weight and lora_B is compared with the built one; this
+needs memory for about two models.
 The projection starts from a random init, so there is nothing to compare it with.
 
 Usage:
@@ -72,7 +75,9 @@ def base_report(state_dict, base):
     out = defaultdict(lambda: {'compared': 0, 'changed': 0, 'max_relative_change': 0.0})
     for key, value in state_dict.items():
         part = part_of(key)
-        if key not in base or 'lora_' in key or part in ('projection', 'other'):
+        # lora_B is zero in a new adapter and the loaded values in a pretrained one (e.g. from continued pre-training),
+        # so it changes only when trained here; lora_A of a new adapter is randomly initialised, so it is not compared
+        if key not in base or '.lora_A.' in key or part in ('projection', 'other'):
             continue
         ref = base[key]
         stats = out[part]
@@ -88,7 +93,7 @@ def base_report(state_dict, base):
 def build_base(conf):
     from model.fossilVL import FossilVL
     model = FossilVL(conf)
-    if conf.decoder.apply_lora:
+    if conf.decoder.apply_lora and not hasattr(model.decoder.model, 'peft_config'):
         model.decoder.apply_lora(conf)
     return model.state_dict()
 
@@ -112,8 +117,10 @@ def check(path, conf, base=None):
     layers = lora_report(state_dict, conf)
     if layers:
         zero = sum(entry['zero'] for entry in layers)
+        # non-zero lora_B means trained here or loaded from a pretrained adapter; --compare_base tells which
         verdict = 'NOT TRAINED (every lora_B is zero)' if zero == len(layers) else \
-            'trained' if zero == 0 else f'partly trained ({zero} adapters still zero)'
+            'non-zero (trained here, or a pretrained adapter: see --compare_base)' if zero == 0 else \
+            f'partly non-zero ({zero} adapters still zero)'
         print(f'  LoRA: {len(layers)} adapted layers, {zero} with lora_B all zero -> {verdict}')
         trained = [entry for entry in layers if not entry['zero']]
         if trained:
