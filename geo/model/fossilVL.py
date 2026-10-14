@@ -62,12 +62,18 @@ class FossilVL(torch.nn.Module):
         self.encoder
         self.log_first = True
 
+    def encoder_sizes(self):
+        # a list in the configs (encoder.size), a single int for CLIP
+        im_size = self.encoder.im_size
+        return [im_size] if isinstance(im_size, int) else list(im_size)
+
     def input_size(self, sizes):
         """Encoder input size for images of these sizes (the 'size' of the samples): with several encoder sizes, the
         largest one when an image is at least that large, else the smallest one; None with a single encoder size."""
-        if len(self.encoder.im_size) == 1:
+        encoder_sizes = self.encoder_sizes()
+        if len(encoder_sizes) == 1:
             return None
-        return max(self.encoder.im_size) if max(sizes) >= max(self.encoder.im_size) else min(self.encoder.im_size)
+        return max(encoder_sizes) if max(sizes) >= max(encoder_sizes) else min(encoder_sizes)
 
     def image_tensors(self, images, size):
         # CLIP's get_image_tensors has no size argument (single size only)
@@ -77,7 +83,7 @@ class FossilVL(torch.nn.Module):
 
     def forward(self, batch):
         # print('IM_SIZE', type(self.encoder.im_size))
-        size = self.input_size(batch['size']) if len(self.encoder.im_size) > 1 else None
+        size = self.input_size(batch['size']) if len(self.encoder_sizes()) > 1 else None
         image_tensors = self.image_tensors(batch['image'], size)
 
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
@@ -98,7 +104,7 @@ class FossilVL(torch.nn.Module):
     def generate(self, image, prompt, num_beams=10, do_sample=False, max_new_tokens=100, size=None, **kwargs):
         """size: the 'size' of the sample(s), as in training; without it, the shorter side of each image file."""
         device = self.decoder.model.device
-        if len(self.encoder.im_size) > 1:
+        if len(self.encoder_sizes()) > 1:
             if size is None:
                 size = [min(Image.open(i).size) if isinstance(i, str) else min(i.size) for i in image]
             size = self.input_size(size if isinstance(size, (list, tuple)) else [size])
