@@ -4,7 +4,7 @@ the format of model/fossilVL.save_checkpoint, which load_checkpoint reads.
 
 A weight is dropped only when it is identical to the one FossilVL(conf) builds from the pretrained encoder/decoder (so
 loading the small checkpoint on top of a fresh model gives back exactly the full one; a randomly initialised weight
-never matches and is kept). The projection and LoRA adapters are always kept. The small checkpoints need the same
+never matches and is kept). The projection, scale embedding and LoRA adapters are always kept. The small checkpoints need the same
 pretrained weights (paths in config.yaml) to load. Needs memory for about two copies of the model.
 
 Without --in_place the small checkpoint is written next to the full one as <name>.small.pt.
@@ -21,7 +21,7 @@ import torch
 from omegaconf import OmegaConf
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from model.fossilVL import CHECKPOINT_FORMAT, FossilVL  # noqa: E402
+from model.fossilVL import CHECKPOINT_FORMAT, TRAINED_MODULES, FossilVL  # noqa: E402
 
 
 def size_mb(state_dict):
@@ -38,7 +38,7 @@ def shrink(base, path, in_place):
                            f'{len(set(full) - set(base))} unexpected and {len(set(base) - set(full))} missing keys')
 
     keep = {k: v for k, v in full.items()
-            if 'lora_' in k or k.startswith('projection.') or v.dtype != base[k].dtype or not torch.equal(v, base[k])}
+            if 'lora_' in k or k.startswith(TRAINED_MODULES) or v.dtype != base[k].dtype or not torch.equal(v, base[k])}
 
     out = path if in_place else path[:-len('.pt')] + '.small.pt'
     tmp = out + '.tmp'

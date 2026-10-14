@@ -5,23 +5,38 @@ from PIL import Image
 sys.path.append(os.path.normpath(os.path.join(__file__, '../')))
 from encoder import encoder_factory
 from decoder import decoder_factory
-from projector import multimodal_factory
+from projector import ScaleEmbedding, multimodal_factory
 from torch.distributed.fsdp import fully_shard, FSDPModule
 from torch.distributed.tensor import DTensor
 from torch.distributed.device_mesh import init_device_mesh
 
 CHECKPOINT_FORMAT = 'trainable'
+# modules trained from scratch: always in checkpoints, even when frozen (e.g. during RL)
+TRAINED_MODULES = ('projection.', 'scale_embedding.')
+
+
+def project_features(projection, scale_embedding, features, mm_per_pixel=None):
+    """Visual tokens of encoder features. With a scale embedding (scale_token in the config), the embedding of
+    log(mm_per_pixel), the physical size of one encoder input pixel of each image (tensor [b]), is the first visual
+    token and also conditions the projection when it supports it (qformer)."""
+    if scale_embedding is None:
+        return projection(features)
+    if mm_per_pixel is None:
+        raise ValueError('scale_token is enabled but the images have no scale (set data.scale_field)')
+    scale = scale_embedding(torch.log(torch.as_tensor(mm_per_pixel, dtype=torch.float32, device=features.device)))
+    tokens = projection(features, condition=scale) if getattr(projection, 'conditioned', False) else projection(features)
+    return torch.cat([scale[:, None].to(tokens.dtype), tokens], dim=1)
 
 
 def checkpoint_state_dict(model, state_dict=None):
-    """The part of the state dict a checkpoint needs: trainable parameters, buffers, LoRA adapters, the projection and
-    every weight the model was loaded with (load_checkpoint), e.g. the SFT projection when it is frozen during RL.
+    """The part of the state dict a checkpoint needs: trainable parameters, buffers, LoRA adapters, the projection, the
+    scale embedding and every weight the model was loaded with (load_checkpoint), e.g. the SFT projection when it is frozen during RL.
     Frozen pretrained encoder/decoder weights are left out: FossilVL(conf) builds them again from their sources."""
     state_dict = model.state_dict() if state_dict is None else state_dict
     frozen = {name for name, p in model.named_parameters() if not p.requires_grad}
     loaded = getattr(model, 'loaded_keys', set())
     return {k: v for k, v in state_dict.items()
-            if k not in frozen or 'lora_' in k or k.startswith('projection.') or k in loaded}
+            if k not in frozen or 'lora_' in k or k.startswith(TRAINED_MODULES) or k in loaded}
 
 
 def save_checkpoint(model, path, state_dict=None):
@@ -39,7 +54,7 @@ def load_checkpoint(model, path):
         state_dict = ckpt['state_dict']
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         # the frozen pretrained weights are expected to be missing, the trained ones are not
-        lost = [k for k in missing if 'lora_' in k or k.startswith('projection.')]
+        lost = [k for k in missing if 'lora_' in k or k.startswith(TRAINED_MODULES)]
         if unexpected or lost:
             raise RuntimeError(f'{path} does not match the model: unexpected keys {unexpected[:5]}, '
                                f'missing trained keys {lost[:5]} (is LoRA applied as in the config?)')
@@ -58,8 +73,14 @@ class FossilVL(torch.nn.Module):
         self.use_grid = False if 'mapper' in conf.multimodal else True
         # with use_grid the projection reads patch tokens, which can be narrower than the global embedding (DINOtxt)
         input_dim = getattr(self.encoder, 'grid_dim', self.encoder.dim) if self.use_grid else self.encoder.dim
-        self.projection = multimodal_factory(conf.multimodal, input_dim, self.decoder.dim)
-        self.encoder
+        # scale_token: a learned token with the physical scale of each image (needs data.scale_field)
+        self.scale_embedding = None
+        if conf.get('scale_token', False):
+            if not conf.data.get('scale_field'):
+                raise ValueError('scale_token needs data.scale_field, the sample field with the image scale')
+            self.scale_embedding = ScaleEmbedding(self.decoder.dim)
+        self.projection = multimodal_factory(conf.multimodal, input_dim, self.decoder.dim,
+                                             condition_dim=self.decoder.dim if self.scale_embedding is not None else None)
         self.log_first = True
 
     def encoder_sizes(self):
@@ -75,6 +96,21 @@ class FossilVL(torch.nn.Module):
             return None
         return max(encoder_sizes) if max(sizes) >= max(encoder_sizes) else min(encoder_sizes)
 
+    def mm_per_pixel(self, sizes, scales, input_size=None):
+        """Physical size of one encoder input pixel per image: the center crop covers the shorter side (sizes, in
+        pixels of the loaded image, scales in mm per pixel), resized to the encoder input size."""
+        side = input_size or self.encoder_sizes()[0]
+        return torch.as_tensor(sizes, dtype=torch.float32) * torch.as_tensor(scales, dtype=torch.float32) / side
+
+    def project(self, features, sizes=None, scales=None, input_size=None):
+        """Visual tokens of encoder features, with the scale token when scale_token is enabled."""
+        mm = None
+        if self.scale_embedding is not None:
+            if sizes is None or scales is None:
+                raise ValueError('scale_token is enabled: the size and scale of every image are needed')
+            mm = self.mm_per_pixel(sizes, scales, input_size)
+        return project_features(self.projection, self.scale_embedding, features, mm)
+
     def image_tensors(self, images, size):
         # CLIP's get_image_tensors has no size argument (single size only)
         if size is None:
@@ -87,32 +123,38 @@ class FossilVL(torch.nn.Module):
         image_tensors = self.image_tensors(batch['image'], size)
 
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
-        image_embeddings = self.projection(image_embeddings)
+        image_embeddings = self.project(image_embeddings, batch.get('size'), batch.get('scale'), size)
 
         inputs = self.decoder.prepare_inputs(batch['conversation'])
         text_embeddings = self.decoder.get_input_embeds(inputs)
         model_inputs = self.decoder.merge_inputs(image_embeddings, text_embeddings, inputs)
 
         if self.log_first:
-            print('RANK:', torch.distributed.get_rank(), 'IMAGE SHAPE', image_tensors.shape)
-            print('RANK:', torch.distributed.get_rank(), batch['image'][0])
-            print('RANK', torch.distributed.get_rank(), 'TEXT SHAPE', inputs.shape)                    
+            rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0  # 0 without torchrun
+            print('RANK:', rank, 'IMAGE SHAPE', image_tensors.shape)
+            print('RANK:', rank, batch['image'][0])
+            print('RANK', rank, 'TEXT SHAPE', inputs.shape)
             self.log_first = False
         
         return self.decoder(model_inputs)
     
-    def generate(self, image, prompt, num_beams=10, do_sample=False, max_new_tokens=100, size=None, **kwargs):
-        """size: the 'size' of the sample(s), as in training; without it, the shorter side of each image file."""
+    def generate(self, image, prompt, num_beams=10, do_sample=False, max_new_tokens=100, size=None, scale=None,
+                 **kwargs):
+        """size: the 'size' of the sample(s), as in training; without it, the shorter side of each image file.
+        scale: mm per pixel of the image(s), the dataset's 'scale' (needed with scale_token)."""
         device = self.decoder.model.device
-        if len(self.encoder_sizes()) > 1:
+        sizes = None
+        if len(self.encoder_sizes()) > 1 or self.scale_embedding is not None:
             if size is None:
-                size = [min(Image.open(i).size) if isinstance(i, str) else min(i.size) for i in image]
-            size = self.input_size(size if isinstance(size, (list, tuple)) else [size])
-        else:
-            size = None  # single encoder size: the encoder's own
-        image_tensors = self.image_tensors(image, size).to(device)
+                sizes = [min(Image.open(i).size) if isinstance(i, str) else min(i.size) for i in image]
+            else:
+                sizes = list(size) if isinstance(size, (list, tuple)) else [size]
+        # single encoder size: the encoder's own
+        input_size = self.input_size(sizes) if len(self.encoder_sizes()) > 1 else None
+        scales = None if scale is None else (list(scale) if isinstance(scale, (list, tuple)) else [scale])
+        image_tensors = self.image_tensors(image, input_size).to(device)
         image_embeddings = self.encoder(image_tensors, return_grid=self.use_grid)
-        image_embeddings = self.projection(image_embeddings)
+        image_embeddings = self.project(image_embeddings, sizes, scales, input_size)
 
         messages = [
             {"role": "user", "content": prompt}
@@ -132,7 +174,7 @@ class FossilVL(torch.nn.Module):
     def trainable_params(self):
         trainable_params = 0
         total_params = 0 
-        modules = [self.decoder, self.encoder, self.projection]
+        modules = [self.decoder, self.encoder, self.projection] + ([self.scale_embedding] if self.scale_embedding is not None else [])
 
         trainable_params = sum(
             p.numel()

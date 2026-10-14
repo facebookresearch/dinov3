@@ -4,7 +4,7 @@ import torch
 import os 
 import json
 from argparse import ArgumentParser
-from dataset import ConversationDataset, conversation_collate
+from dataset import ConversationDataset, conversation_collate, data_options
 from tqdm import tqdm
 
 
@@ -40,6 +40,7 @@ if __name__ == '__main__':
         groups=conf.data.groups if hasattr(conf.data, 'groups') else None,
         min_size=max(conf.encoder.size),
         campo=args.campo,
+        **data_options(conf),
         )
     
     loader = dataset.get_loader(conversation_collate, 1, False)
@@ -57,7 +58,8 @@ if __name__ == '__main__':
         prompt = batch['conversation'][0][0]['content']
         target = batch['conversation'][0][1]['content']
         # the sample's size picks the encoder input size, as in training
-        output = model.generate([image], prompt, size=batch['size'][0] if 'size' in batch else None)
+        output = model.generate([image], prompt, size=batch['size'][0] if 'size' in batch else None,
+                                scale=batch['scale'][0] if 'scale' in batch else None)
         results['generated'].append({'reference': target, 'prediction': output, 'prompt': prompt, 'image': image})
 
         i += 1

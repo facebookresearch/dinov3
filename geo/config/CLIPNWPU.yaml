@@ -2,7 +2,7 @@ encoder:
   name: 'CLIP' 
   weight_path: 'ViT-L/14'
   config_path: '/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/NWPU-CLIP-large14-LoRA-Seed-batch512-t5/config.yaml' 
-  size: 224 # image size
+  size: [224] # image size
 decoder:
   # name: "Qwen/Qwen3-4B-Thinking-2507"
   # name: Qwen/Qwen3-0.6B

@@ -141,7 +141,7 @@ class QFormer(nn.Module):
     decoder dimension and become the k visual tokens of the prompt, whatever the number of patches (image size).
     Trained only with the captioning loss of the decoder."""
 
-    def __init__(self, input_dim, output_dim, k, layers=2, dim=768, heads=8, dropout=0.0):
+    def __init__(self, input_dim, output_dim, k, layers=2, dim=768, heads=8, dropout=0.0, condition_dim=None):
         super().__init__()
         self.visual_norm = nn.LayerNorm(input_dim)
         self.visual_proj = nn.Linear(input_dim, dim) if input_dim != dim else nn.Identity()
@@ -149,10 +149,19 @@ class QFormer(nn.Module):
         self.blocks = nn.ModuleList(QFormerBlock(dim, heads, dropout=dropout) for _ in range(layers))
         self.norm = nn.LayerNorm(dim)
         self.proj = nn.Linear(dim, output_dim)
+        # condition_dim: a per-image vector (e.g. the scale embedding) added to every query; zero-initialised, so the
+        # Q-Former starts as without it
+        self.conditioned = condition_dim is not None
+        if self.conditioned:
+            self.condition = nn.Linear(condition_dim, dim)
+            nn.init.zeros_(self.condition.weight)
+            nn.init.zeros_(self.condition.bias)
 
-    def forward(self, x, return_weights=False):
+    def forward(self, x, return_weights=False, condition=None):
         visual = self.visual_proj(self.visual_norm(x))
         queries = self.queries.expand(x.shape[0], -1, -1)
+        if self.conditioned and condition is not None:
+            queries = queries + self.condition(condition.to(queries.dtype))[:, None]
         weights = []
         for block in self.blocks:
             queries, w = block(queries, visual, return_weights)
@@ -162,14 +171,36 @@ class QFormer(nn.Module):
         return (out, weights) if return_weights else out
 
 
-def multimodal_factory(name, input_dim, output_dim):
+class ScaleEmbedding(nn.Module):
+    """Embedding of the physical scale of an image, given as log(mm per encoder input pixel): sinusoidal features at
+    several frequencies (so both small and large scale differences are resolved) and an MLP to output_dim."""
+
+    def __init__(self, output_dim, frequencies=8, hidden=256):
+        super().__init__()
+        self.register_buffer('frequencies', 2.0 ** torch.arange(-3, frequencies - 3, dtype=torch.float32),
+                             persistent=False)
+        self.mlp = nn.Sequential(
+            nn.Linear(1 + 2 * frequencies, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, output_dim),
+        )
+
+    def forward(self, log_scale):
+        x = log_scale.float()[:, None]
+        angles = x * self.frequencies
+        features = torch.cat([x, angles.sin(), angles.cos()], dim=-1)
+        return self.mlp(features.to(self.mlp[0].weight.dtype))
+
+
+def multimodal_factory(name, input_dim, output_dim, condition_dim=None):
+    # condition_dim: size of a per-image condition (the scale embedding) the projection can use (qformer only)
     name = name.split(':')
     if name[0] == 'qformer':
         # qformer:<queries>[:<layers>[:<width>]], e.g. qformer:32 or qformer:32:4:1024
         k = int(name[1])
         layers = int(name[2]) if len(name) > 2 else 2
         dim = int(name[3]) if len(name) > 3 else 768
-        return QFormer(input_dim, output_dim, k, layers=layers, dim=dim)
+        return QFormer(input_dim, output_dim, k, layers=layers, dim=dim, condition_dim=condition_dim)
     if name[0] == 'mapper':
         return Mapper(input_dim, output_dim, int(name[1]))
     if name[0] == 'projector':

@@ -13,53 +13,108 @@ Image.MAX_IMAGE_PIXELS = None
 def conversation_collate(batch):
     payload = {'image': [], 'conversation': []}
     sizes = []
+    scales = []
     for sample in batch:
         payload['image'].append(sample['image'])
         payload['conversation'].append(json.loads(sample['conversation']))
         if 'size' in sample.keys():
             sizes.append(sample['size'])
+        if 'scale' in sample.keys():
+            scales.append(sample['scale'])
 
     if len(sizes) > 0:
         payload['size'] = np.array(sizes)
+    if len(scales) > 0:
+        payload['scale'] = np.array(scales)
     return payload
 
 
+# conversions of data.scale_unit to millimetres per pixel
+MM_PER_PIXEL = {
+    'px_per_mm': lambda v: 1.0 / v,
+    'mm_per_px': lambda v: v,
+    'um_per_px': lambda v: v / 1000.0,
+}
+
+
+def data_options(conf):
+    """Image source and scale options of conf.data, as ConversationDataset arguments:
+        small_root   folder with the non-standardized images, same file names as data.root (default: data.root)
+        scale_field  sample field with the scale of the image actually loaded, in scale_unit (default: no scale)
+        scale_unit   px_per_mm (default), mm_per_px or um_per_px"""
+    data = conf.data
+    return {'small_root': data.get('small_root'), 'scale_field': data.get('scale_field'),
+            'scale_unit': data.get('scale_unit', 'px_per_mm')}
+
+
 class ConversationDataset(Dataset):
-    def __init__(self, root, annotation, groups=None, max_size=20000000, min_size=224, campo=None, campos=None):
+    def __init__(self, root, annotation, groups=None, max_size=20000000, min_size=224, campo=None, campos=None,
+                 small_root=None, scale_field=None, scale_unit='px_per_mm'):
             # campo: a single description type; campos: a list of them. Both None keeps every sample
+            # small_root: images read from this folder instead of root (same names); their size (shorter side) is
+            #   read from the file, since the split's 'size' describes the standardized images
+            # scale_field: sample field with the image scale; every sample then has 'scale' in mm per pixel
             data = json.load(open(annotation, 'r'))
-            self.root = root
+            self.root = small_root or root
             self.image = []
             self.conversation = []
             self.labels = []  # per sample, None when the split has no labels
             self.campos = []
             self.sizes = []
+            self.scales = []  # mm per pixel per sample, None without scale_field
+            self.scale_field = scale_field
+            if scale_field is not None and scale_unit not in MM_PER_PIXEL:
+                raise ValueError(f'scale_unit must be one of {sorted(MM_PER_PIXEL)}, got {scale_unit}')
             selected = set(campos or []) | ({campo} if campo is not None else set())
             print('campos:', sorted(selected) if selected else 'all')
             print('groups', groups)
+            if small_root:
+                print('images from', small_root)
+            file_sizes = {}  # shorter side per image file, read once per image
+            missing_scale = 0
 
             for sample in data:
                 if 'user_group' not in sample.keys() or sample['user_group'] in groups:
-                    if 'size' not in sample.keys() or (sample['size'] >= min_size and sample['size'] < max_size):
-                        if not selected or sample.get('campo') in selected:
-                            if 'cd_guid' in sample:
-                                self.image.append(os.path.join(self.root, '{}.png'.format(sample['cd_guid'])))
+                    if not selected or sample.get('campo') in selected:
+                        if 'cd_guid' in sample:
+                            image = os.path.join(self.root, '{}.png'.format(sample['cd_guid']))
 
-                            elif 'image_name' in sample:
-                                self.image.append(os.path.join(self.root, sample['image_name'].replace('\\', '/')))
+                        elif 'image_name' in sample:
+                            image = os.path.join(self.root, sample['image_name'].replace('\\', '/'))
 
-                            elif 'image_id' in sample:
-                                self.image.append(os.path.join(self.root, '{}.png'.format(sample['image_id'])))
-                                
-                            else:
-                                raise ValueError('there is no image in the dataset')
+                        elif 'image_id' in sample:
+                            image = os.path.join(self.root, '{}.png'.format(sample['image_id']))
 
-                            self.conversation.append(json.dumps(sample['conversation']))
-                            self.labels.append(sample.get('labels'))
-                            self.campos.append(sample.get('campo'))
-                            # only for kept samples, so sizes[i] belongs to image[i]
-                            if 'size' in sample.keys():
-                                self.sizes.append(sample['size'])
+                        else:
+                            raise ValueError('there is no image in the dataset')
+
+                        size = sample.get('size')
+                        if small_root:
+                            if image not in file_sizes:
+                                with Image.open(image) as im:  # reads the header only
+                                    file_sizes[image] = min(im.size)
+                            size = file_sizes[image]
+                        if size is not None and not (size >= min_size and size < max_size):
+                            continue
+
+                        scale = None
+                        if scale_field is not None:
+                            if sample.get(scale_field) is None:
+                                missing_scale += 1
+                                continue
+                            scale = MM_PER_PIXEL[scale_unit](float(sample[scale_field]))
+
+                        self.image.append(image)
+                        self.conversation.append(json.dumps(sample['conversation']))
+                        self.labels.append(sample.get('labels'))
+                        self.campos.append(sample.get('campo'))
+                        self.scales.append(scale)
+                        # only for kept samples, so sizes[i] belongs to image[i]
+                        if size is not None:
+                            self.sizes.append(size)
+
+            if missing_scale:
+                print(f'skipped {missing_scale} samples without {scale_field}')
 
     def __getitem__(self, index):
         payload = {
@@ -69,6 +124,8 @@ class ConversationDataset(Dataset):
 
         if len(self.sizes) > 0:
             payload['size'] = self.sizes[index]
+        if self.scale_field is not None:
+            payload['scale'] = self.scales[index]
 
         return payload
     
@@ -130,10 +187,12 @@ class DistributedDatasetBatchSampler(Sampler):
         num_replicas=None,
         rank=None,
     ):
+        # a single process (no torchrun) is one replica
+        distributed = torch.distributed.is_initialized()
         if num_replicas is None:
-            num_replicas = torch.distributed.get_world_size()
+            num_replicas = torch.distributed.get_world_size() if distributed else 1
         if rank is None:
-            rank = torch.distributed.get_rank()
+            rank = torch.distributed.get_rank() if distributed else 0
 
         self.len1 = len1
         self.len2 = len2

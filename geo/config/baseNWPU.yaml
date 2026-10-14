@@ -3,7 +3,7 @@ encoder:
   # weight_path: "facebook/dinov3-vitl16-pretrain-lvd1689m"
   weight_path: "facebook/dinov3-vitl16-pretrain-sat493m"
   config_path: '' # DINO pretreinado nao precisa disso
-  size: 224 # image size
+  size: [224] # image size
 decoder:
   # name: Qwen/Qwen3-4B-Thinking-2507
   name: Qwen/Qwen3-0.6B

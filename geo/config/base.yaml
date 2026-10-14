@@ -18,6 +18,7 @@ decoder:
   lora_alpha : 32
   apply_lora: False
 multimodal: 'mapper:20' # mapper:<k>, merger:<s>, projector, attention:<k>, qformer:<queries>[:<layers>[:<width>]]
+scale_token: False # learned visual token with the physical scale of each image (needs data.scale_field)
 train:
   batch_size: 16
   stage1:
@@ -35,6 +36,9 @@ data:
   train: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_train.json"
   val: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_val.json"
   test: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_test.json"
+  small_root: null # folder with the non-standardized images (same file names as root); null: images from root
+  scale_field: null # sample field with the scale of the loaded image (e.g. px_per_mm); null: no scale
+  scale_unit: px_per_mm # unit of scale_field: px_per_mm, mm_per_px or um_per_px
 save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil_vl"
 
 # "facebook/dinov3-vitl16-pretrain-lvd1689m"

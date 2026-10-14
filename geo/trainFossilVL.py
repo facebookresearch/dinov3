@@ -1,5 +1,5 @@
 from torch.optim import AdamW
-from dataset import ConversationDataset, DatasetBatchSampler, conversation_collate, DistributedDatasetBatchSampler
+from dataset import ConversationDataset, DatasetBatchSampler, conversation_collate, DistributedDatasetBatchSampler, data_options
 from model.fossilVL import FossilVL, save_checkpoint
 from omegaconf import OmegaConf
 import argparse
@@ -103,6 +103,7 @@ if __name__ == '__main__':
             conf.data.train, 
             groups=conf.data.groups if hasattr(conf.data, 'groups') else None,
             campos=args.campos,
+            **data_options(conf),
             )
 
         val_dataset = ConversationDataset(
@@ -110,6 +111,7 @@ if __name__ == '__main__':
             conf.data.val,
             groups=conf.data.groups if hasattr(conf.data, 'groups') else None,
             campos=args.campos,
+            **data_options(conf),
             )
 
         train_loader = train_dataset.get_loader(conversation_collate, conf.train.batch_size, True)
@@ -122,6 +124,7 @@ if __name__ == '__main__':
             conf.data.train,
             groups=conf.data.groups,
             campos=args.campos,
+            **data_options(conf),
             min_size=max(conf.encoder.size),
             )
 
@@ -130,6 +133,7 @@ if __name__ == '__main__':
             conf.data.train, 
             groups=conf.data.groups,
             campos=args.campos,
+            **data_options(conf),
             min_size=min(conf.encoder.size),
             max_size=max(conf.encoder.size),
             )
@@ -142,6 +146,7 @@ if __name__ == '__main__':
             conf.data.val,
             groups=conf.data.groups,
             campos=args.campos,
+            **data_options(conf),
             min_size=min(conf.encoder.size),
             max_size=max(conf.encoder.size),
             )
@@ -152,6 +157,7 @@ if __name__ == '__main__':
             groups=conf.data.groups,
             min_size=max(conf.encoder.size),
             campos=args.campos,
+            **data_options(conf),
             )
         
         val_dataset = ConcatDataset([val_dataset1, val_dataset2])

@@ -103,6 +103,9 @@ class FossilVLForCausalLM(PreTrainedModel):
         if fossil_conf.decoder.apply_lora and not hasattr(self.fossil.decoder.model, 'peft_config'):
             self.fossil.decoder.apply_lora(fossil_conf)
         load_checkpoint(self.fossil, os.path.join(fossil_conf.save_path, f'last_checkpoint.pt'))
+        if self.fossil.scale_embedding is not None:
+            # forward/generate below call the projection directly, without the scale of the images
+            raise NotImplementedError('scale_token models are not supported by the HF wrapper')
         
         # value head maps decoder hidden states -> scalar values (per token)
         decoder_dim = getattr(self.fossil.decoder, "dim", None)

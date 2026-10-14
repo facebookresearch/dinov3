@@ -47,10 +47,10 @@ from PIL import Image  # noqa: E402
 GEO = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, GEO)
 sys.path.insert(0, os.path.join(GEO, 'eval'))
-from dataset import ConversationDataset  # noqa: E402
+from dataset import ConversationDataset, data_options  # noqa: E402
 from eval_labels_llm import HFJudge, build_claim, score_pairs  # noqa: E402
 from judge_reliability import label_pools, normalize_labels, sample_claims  # noqa: E402
-from model.fossilVL import FossilVL, load_checkpoint, save_checkpoint  # noqa: E402
+from model.fossilVL import FossilVL, load_checkpoint, project_features, save_checkpoint  # noqa: E402
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -65,7 +65,7 @@ class RLDataset(torch.utils.data.Dataset):
     categories. The absent-label negatives are drawn from every label of the kept samples."""
 
     def __init__(self, conf, split_path, labels_path=None, campos=None, categories=None):
-        base = ConversationDataset(conf.data.root, split_path, groups=conf.data.get('groups'))
+        base = ConversationDataset(conf.data.root, split_path, groups=conf.data.get('groups'), **data_options(conf))
         if campos:
             missing = set(campos) - set(base.campos)
             if missing:
@@ -82,7 +82,8 @@ class RLDataset(torch.utils.data.Dataset):
 
         self.samples = []
         skipped = defaultdict(int)
-        for image, conversation, labels, sample_campo in zip(base.image, base.conversation, base.labels, base.campos):
+        for image, conversation, labels, sample_campo, scale in zip(base.image, base.conversation, base.labels,
+                                                                    base.campos, base.scales):
             if campos and sample_campo not in campos:
                 continue
             conversation = json.loads(conversation)
@@ -108,7 +109,7 @@ class RLDataset(torch.utils.data.Dataset):
                 skipped['empty labels' if not categories else 'no labels of the selected categories'] += 1
                 continue
             self.samples.append({'image': image, 'prompt': prompt, 'reference': reference, 'labels': labels,
-                                 'campo': sample_campo})
+                                 'campo': sample_campo, 'scale': scale})
         self.skipped = dict(skipped)
         self.pools = label_pools(s['labels'] for s in self.samples)
 
@@ -141,19 +142,25 @@ def encoder_size(conf, image_path):
 
 
 @torch.no_grad()
-def image_features(model, conf, image_path):
-    """Frozen encoder output for one image, [1, encoder dim]."""
+def image_features(model, conf, image_path, scale=None):
+    """Frozen encoder output for one image, [1, encoder dim], and with scale_token the physical size of one encoder
+    input pixel ([1], from the image's scale in mm per pixel), else None."""
     size = encoder_size(conf, image_path)
     tensors = (model.encoder.get_image_tensors([image_path]) if size is None
                else model.encoder.get_image_tensors([image_path], size=size))
-    return model.encoder(tensors, return_grid=model.use_grid)
+    mm_per_pixel = None
+    if model.scale_embedding is not None:
+        with Image.open(image_path) as image:
+            mm_per_pixel = model.mm_per_pixel([min(image.size)], [scale], size)
+    return model.encoder(tensors, return_grid=model.use_grid), mm_per_pixel
 
 
-def prompt_embeddings(decoder, projection, features, prompt):
-    """Chat prompt with the projected image tokens merged in, [1, prompt length, decoder dim]."""
+def prompt_embeddings(decoder, project, features, prompt):
+    """Chat prompt with the image tokens (project: encoder features -> visual tokens) merged in,
+    [1, prompt length, decoder dim]."""
     ids = decoder.prepare_inputs([[{'role': 'user', 'content': prompt}]], add_gen_prompt=True)
     ids = ids.to(features.device)
-    merged = decoder.merge_inputs(projection(features), decoder.get_input_embeds(ids), ids)
+    merged = decoder.merge_inputs(project(features), decoder.get_input_embeds(ids), ids)
     return merged['input_embeddings']
 
 
@@ -177,9 +184,9 @@ def sample_completions(decoder, embeds, args):
     return ids, mask, ~is_eos.any(1)
 
 
-def token_logps(decoder, projection, features, prompt, ids, mask, temperature):
+def token_logps(decoder, project, features, prompt, ids, mask, temperature):
     """Log-probability of every completion token under the model, [G, T] (padding positions included)."""
-    embeds = prompt_embeddings(decoder, projection, features, prompt)
+    embeds = prompt_embeddings(decoder, project, features, prompt)
     n, length = ids.shape
     inputs = torch.cat([embeds.expand(n, -1, -1), decoder.get_input_embeds(ids)], dim=1)
     attention = torch.cat([torch.ones(n, embeds.shape[1], dtype=mask.dtype, device=mask.device), mask], dim=1)
@@ -291,21 +298,29 @@ def average_gradients(params, env, bucket_size=2 ** 26):
 
 def policy_step(step, batch, model, ref, conf, pools, optimizer, params, env, args):
     device = env['device']
-    decoder, projection = model.decoder, model.projection
+    decoder = model.decoder
+
+    def projector(modules, mm_per_pixel):
+        # encoder features -> visual tokens of the policy or of the reference model (with the scale token if enabled)
+        return lambda features: project_features(modules['projection'], modules.get('scale_embedding'), features,
+                                                 mm_per_pixel)
+    policy = {'projection': model.projection, 'scale_embedding': model.scale_embedding}
     rng = random.Random(args.seed * 1_000_003 + step * 1_000 + env['rank'])
     t0 = time.time()
 
     groups, questions = [], []
     for sample in batch:
-        features = image_features(model, conf, sample['image']).to(device)
+        features, mm_per_pixel = image_features(model, conf, sample['image'], sample.get('scale'))
+        features = features.to(device)
         with torch.no_grad():
-            embeds = prompt_embeddings(decoder, projection, features, sample['prompt'])
+            embeds = prompt_embeddings(decoder, projector(policy, mm_per_pixel), features, sample['prompt'])
         ids, mask, truncated = sample_completions(decoder, embeds, args)
         texts = [decoder.tokenizer.decode(ids[i][mask[i].bool()], skip_special_tokens=True).strip()
                  for i in range(len(ids))]
         claims = sample_claims(sample['labels'], pools, rng, args.neg_ratio)
         claim_texts = [build_claim(category, label) for category, label, _, _ in claims]
-        groups.append({'sample': sample, 'features': features, 'ids': ids, 'mask': mask, 'texts': texts,
+        groups.append({'sample': sample, 'features': features, 'mm_per_pixel': mm_per_pixel, 'ids': ids, 'mask': mask,
+                       'texts': texts,
                        'claims': claims, 'truncated': truncated, 'first_question': len(questions)})
         questions += [(text, claim) for text in texts for claim in claim_texts]
     t_generate = time.time() - t0
@@ -329,14 +344,14 @@ def policy_step(step, batch, model, ref, conf, pools, optimizer, params, env, ar
             advantages = advantages / (rewards.std() + 1e-4)
         g['rewards'] = rewards.tolist()
 
-        logps = token_logps(decoder, projection, g['features'], g['sample']['prompt'], g['ids'], g['mask'],
-                            args.temperature)
+        logps = token_logps(decoder, projector(policy, g['mm_per_pixel']), g['features'], g['sample']['prompt'],
+                            g['ids'], g['mask'], args.temperature)
         # single on-policy update: the ratio is 1 in value, its gradient is the policy gradient
         loss = -advantages[:, None] * torch.exp(logps - logps.detach())
         if args.beta > 0:
             with torch.no_grad():
-                ref_logps = token_logps(ref['decoder'], ref['projection'], g['features'], g['sample']['prompt'],
-                                        g['ids'], g['mask'], args.temperature)
+                ref_logps = token_logps(ref['decoder'], projector(ref, g['mm_per_pixel']), g['features'],
+                                        g['sample']['prompt'], g['ids'], g['mask'], args.temperature)
             delta = ref_logps - logps
             kl = torch.exp(delta) - delta - 1  # k3 estimator of KL(policy || reference), per token
             loss = loss + args.beta * kl
@@ -377,11 +392,15 @@ def run_policy(env, args):
 
     model = load_fossil(conf, os.path.join(args.model, f'{args.ckpt}_checkpoint.pt'))
     ref = {'decoder': copy.deepcopy(model.decoder), 'projection': copy.deepcopy(model.projection)}
+    if model.scale_embedding is not None:
+        ref['scale_embedding'] = copy.deepcopy(model.scale_embedding)
     for module in ref.values():
         module.to(env['device']).eval().requires_grad_(False)
     model.to(env['device']).eval()  # eval: no dropout, so sampling and log-probs see the same model
     model.encoder.requires_grad_(False)
     model.projection.requires_grad_(not args.freeze_projection)
+    if model.scale_embedding is not None:
+        model.scale_embedding.requires_grad_(not args.freeze_projection)  # part of the visual bridge
     if not hasattr(model.decoder.model, 'peft_config'):
         model.decoder.requires_grad_(True)  # with LoRA only the adapters stay trainable
     params = [p for p in model.parameters() if p.requires_grad]
