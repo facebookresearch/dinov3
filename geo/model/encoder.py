@@ -111,12 +111,13 @@ class Fossil(torch.nn.Module):
             w_patches = int(image_size / patch_size)
             h_patches = int((h * image_size) / (w * patch_size))
             
-        input = TF.to_tensor(TF.resize(mask_image, (w_patches * patch_size, h_patches * patch_size, )))
+        # TF.resize takes (height, width)
+        input = TF.to_tensor(TF.resize(mask_image, (h_patches * patch_size, w_patches * patch_size)))
         input = TF.normalize(input, mean=mean, std=std)
-        
+
         if crop_center:
-            _, w, h = input.shape
-            center = (int(w / 2), int(h/2))
+            _, h, w = input.shape
+            center = (int(h / 2), int(w / 2))
             return input[:, 
                         center[0]-int(image_size/2):center[0]+int(image_size/2), 
                         center[1]-int(image_size/2):center[1]+int(image_size/2)]
