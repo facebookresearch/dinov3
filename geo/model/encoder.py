@@ -1,7 +1,7 @@
 import torch
 from PIL import Image
 import torchvision.transforms.functional as TF
-from dino_utils import create_and_load_model, preprocess
+from dino_utils import create_and_load_model, load_backbone_weights, preprocess
 from abc import ABC, abstractmethod
 from collections import defaultdict
 import sys
@@ -166,49 +166,47 @@ class Dinotxt(Fossil):
         self.encode_image = model.encode_image
 
         if os.path.exists(conf.encoder.config_path):
-            enc_conf = OmegaConf.load(conf.encoder.config_path) 
-            if enc_conf.model.lora.apply:       
-                if not hasattr(enc_conf.model, 'vision_head_only') or not enc_conf.model.vision_head_only:
-                    config = LoraConfig(
-                        r=enc_conf.model.lora.r, 
-                        lora_alpha=enc_conf.model.lora.alpha, 
-                        target_modules=["qkv"], 
-                        lora_dropout=enc_conf.model.lora.dropout_rate, 
-                        bias="none"
-                    )
+            enc_conf = OmegaConf.load(conf.encoder.config_path)
+            # DINO-TXT aligned (in vlm-tuning) on top of a DINOv3 SSL backbone of this project instead of its own
+            backbone_weights = enc_conf.model.get('backbone_weights')
+            if backbone_weights:
+                load_backbone_weights(model.visual_model.backbone, backbone_weights,
+                                      enc_conf.model.get('backbone_branch', 'teacher'))
 
-                    self.model = get_peft_model(self.model, config)
-
-                else:
-                    # vision head only, lora applied to text encoder
-                    config = LoraConfig(
-                        r=enc_conf.model.lora.r, 
-                        lora_alpha=enc_conf.model.lora.alpha, 
-                        target_modules=["qkv"], 
-                        lora_dropout=enc_conf.model.lora.dropout_rate, 
-                        bias="none"
-                    )
-                    self.model.transformer = get_peft_model(self.model.transformer, config)
+            # only the vision tower is used for captioning. With LoRA on the whole model (not vision_head_only) its
+            # attention layers have adapters; with vision_head_only LoRA is on the text tower only, so none here
+            visual = self.model.visual_model
+            vision_head_only = enc_conf.model.get('vision_head_only', False)
+            if enc_conf.model.lora.apply and not vision_head_only:
+                config = LoraConfig(
+                    r=enc_conf.model.lora.r,
+                    lora_alpha=enc_conf.model.lora.alpha,
+                    target_modules=["qkv"],
+                    lora_dropout=enc_conf.model.lora.dropout_rate,
+                    bias="none"
+                )
+                visual = get_peft_model(self.model, config).base_model.model.visual_model
 
             if enc_conf.model.load_weights:
-                path = os.path.join(enc_conf.output_dir, 'pytorch_model', 'pytorch_model.bin') #'last.ckpt') 
+                path = os.path.join(enc_conf.output_dir, 'pytorch_model', 'pytorch_model.bin') #'last.ckpt')
                 print('LOADING MODEL AT', path)
                 ckpt = torch.load(path, weights_only=False)
-                new_state_dict = OrderedDict()
-                for k, v in ckpt.items():
-                    k = k.replace('model.base_model', 'base_model')
-                    k = k.replace('model.visual.transformer', 'model.visual_model')
-                    k = k.replace('model.transformer', 'model.text_model')
-                    new_state_dict[k] = v
+                # vlm-tuning names the vision tower <...>.visual.transformer.<visual_model key>, whatever the wrappers
+                # (lightning module, peft, deepspeed) in front of it
+                marker = 'visual.transformer.'
+                visual_state = OrderedDict((k.split(marker, 1)[1], v) for k, v in ckpt.items() if marker in k)
 
                 print('loading weights...')
-                self.model.load_state_dict(new_state_dict, strict=True)
+                missing, unexpected = visual.load_state_dict(visual_state, strict=False)
+                # frozen weights can be left out of the checkpoint (deepspeed exclude_frozen_parameters); the backbone
+                # was loaded above when it is an SSL one, and comes from the checkpoint otherwise
+                if backbone_weights:
+                    missing = [k for k in missing if not k.startswith('backbone.')]
+                if missing or unexpected or not visual_state:
+                    raise RuntimeError(f'{path} does not match the DINO-TXT vision tower: {len(visual_state)} vision '
+                                       f'weights, missing {missing[:5]}, unexpected {unexpected[:5]}')
 
-            if not enc_conf.model.lora.apply:
-                self.model = self.model.visual_model
-
-            else:
-                self.model = self.model.base_model.visual_model
+            self.model = visual
                     
         print(self.model)
 

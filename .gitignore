@@ -14,6 +14,7 @@ geo/*.sh
 submit.sh
 heads.sh
 features.sh
+vlm-tuning/
 
 geo/eval/reliability/
 resultados

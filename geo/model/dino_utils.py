@@ -42,6 +42,27 @@ def create_and_load_model(cfg_path, weight_path):
     return model
 
 
+def load_backbone_weights(backbone, weight_path, branch='teacher'):
+    """Loads the backbone of a DINOv3 SSL checkpoint of this project (state['model'] with '<branch>.backbone.' keys,
+    branch 'teacher' or 'student') into backbone, a ViT-L/16 of the same architecture, e.g. DINO-TXT's vision backbone.
+    rope_embed.periods is computed from the RoPE settings, not learned, so the backbone's own copy is kept (the SSL
+    checkpoint stores it in bf16)."""
+    state = torch.load(weight_path, map_location='cpu', weights_only=False)
+    state = state.get('model', state)
+    prefix = f'{branch}.backbone.'
+    weights = {k[len(prefix):]: v for k, v in state.items() if k.startswith(prefix) and not k.endswith('rope_embed.periods')}
+    if not weights:
+        prefixes = sorted({'.'.join(k.split('.')[:2]) for k in state})[:10]
+        raise RuntimeError(f'no {prefix}* weights in {weight_path}; it has {prefixes}')
+    missing, unexpected = backbone.load_state_dict(weights, strict=False)
+    missing = [k for k in missing if not k.endswith('rope_embed.periods')]
+    if missing or unexpected:
+        raise RuntimeError(f'{weight_path} ({branch}) does not match the backbone: missing {missing[:5]}, '
+                           f'unexpected {unexpected[:5]}')
+    print(f'loaded the {branch} backbone ({len(weights)} tensors) from {weight_path}')
+    return backbone
+
+
 def load_dino_head(cfg_path, weight_path):
     conf = OmegaConf.load(cfg_path)
     dino = DINOHead(
