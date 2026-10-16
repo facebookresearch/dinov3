@@ -133,10 +133,18 @@ class CLIPEncoder:
 class DINOTxtEncoder:
     def __init__(self, weights, device, batch_size, bpe=None):
         repo = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-        kwargs = {'weights': weights, 'backbone_weights': None, 'pretrained': True}
+        # pretrained=False: the vision backbone is not needed here, only the text tower is loaded from `weights`
+        kwargs = {'pretrained': False}
         if bpe:
             kwargs['bpe_path_or_url'] = bpe
         model, self.tokenizer = torch.hub.load(repo, 'dinov3_vitl16_dinotxt_tet1280d20h24l', source='local', **kwargs)
+        state = torch.load(weights, map_location='cpu')
+        state = state.get('model', state.get('state_dict', state))
+        text_keys = [k for k in model.state_dict() if k.startswith('text_model.')]
+        loaded = set(model.load_state_dict(state, strict=False).missing_keys)
+        missing = [k for k in text_keys if k in loaded]
+        if missing:
+            raise ValueError(f'{weights}: {len(missing)}/{len(text_keys)} text tower weights missing, e.g. {missing[:3]}')
         self.model = model.to(device).eval()
         self.device, self.batch_size, self.max_length = device, batch_size, 77
 
