@@ -1,0 +1,41 @@
+encoder:
+  # vision side of a vlm-tuning DualEncoder run (DINOv3 SSL backbone + Q-Former aligned with e5-large): the backbone, its
+  # LoRA adapters if trained, and the Q-Former, whose query outputs become the visual tokens
+  name: 'DualEncoder'
+  config_path: "/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/dual-qformer/config.yaml" # vlm-tuning run
+  weight_path: "" # empty: the run's best checkpoint-*.ckpt (else last.ckpt); set it to pin one checkpoint
+  train_head: False # also train the Q-Former in SFT (stage 1 and 2), the backbone stays frozen
+  average_patch: False
+  size: [256, 512] # image size
+decoder:
+  # name: "Qwen/Qwen3-4B-Thinking-2507"
+  # name: "Qwen/Qwen3-0.6B"
+  name: "/nethome/recpinfo/users/fibz/data/checkpoint/finetuning/qwen3-0.6B/"
+  lora_rank: 4
+  lora_alpha : 32
+  apply_lora: False
+multimodal: 'projector' # one visual token per Q-Former query (BLIP-2); 'mapper:<k>' reads the pooled embedding
+scale_token: False # learned visual token with the physical scale of each image (needs data.scale_field)
+train:
+  batch_size: 16
+  stage1:
+    # train the multi modal bridge only
+    learning_rate: 0.001
+    epochs: 1
+  stage2:
+    # end to end train
+    frozen_encoder: True
+    learning_rate: 0.0002
+    epochs: 4
+data:
+  groups: [2, 3]
+  root: "/nethome/atena_projetos/fvlk/data/Dataset/v4/images/"
+  train: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_train.json"
+  val: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_val.json"
+  test: "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_test.json"
+  small_root: null # folder with the non-standardized images (same file names as root); null: images from root
+  scale_field: null # sample field with the scale of the loaded image (e.g. px_per_mm); null: no scale
+  scale_unit: px_per_mm # unit of scale_field: px_per_mm, mm_per_px or um_per_px
+save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil_vl"
+
+# "facebook/dinov3-vitl16-pretrain-lvd1689m"

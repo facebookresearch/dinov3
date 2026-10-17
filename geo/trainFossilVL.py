@@ -54,6 +54,13 @@ def val_epoch(model, loader):
     return sum(epoch_loss)/len(epoch_loss)
 
 
+def train_encoder_head(model):
+    # DualEncoder with encoder.train_head: its vision head (e.g. the Q-Former aligned in vlm-tuning) is trained with the
+    # projection in both stages, while the backbone stays frozen (stage 2: unless train.stage2.frozen_encoder is false)
+    if getattr(model.encoder, 'train_head', False):
+        model.encoder.head.requires_grad_(True)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--conf', '-c', type=str, default='geo/config/base.yaml')
@@ -217,6 +224,7 @@ if __name__ == '__main__':
 
     for name, param in model.encoder.named_parameters():
         param.requires_grad = False
+    train_encoder_head(model)
     
     epoch = 0
     print('STAGE 1')
@@ -240,6 +248,7 @@ if __name__ == '__main__':
 
     for name, param in model.encoder.named_parameters():
         param.requires_grad = not conf.train.stage2.frozen_encoder
+    train_encoder_head(model)
 
 
     # LoRA was applied before FSDP; only the adapters of the decoder are trained

@@ -13,7 +13,10 @@ from PIL import Image, ImageFile
 from torch.distributed.fsdp import fully_shard, FSDPModule
 from geo.model.loratorch_utils import apply_lora_attn_mlp
 from collections import OrderedDict
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, inject_adapter_in_model
+from glob import glob
+import re
+from projector import QFormer
 
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -74,9 +77,10 @@ def encoder_factory(conf):
 
         conf: loaded configuration file with Omegaconf
     '''
-    supported_models = {'Fossil': Fossil, 'DINOv3': Dinov3, 'CLIP': CLIP, 'DINOtxt': Dinotxt}
+    supported_models = {'Fossil': Fossil, 'DINOv3': Dinov3, 'CLIP': CLIP, 'DINOtxt': Dinotxt, 'DualEncoder': DualEncoder}
     if conf.encoder.name in supported_models.keys():
         return supported_models[conf.encoder.name](conf)
+    raise ValueError(f'unknown encoder {conf.encoder.name} ({", ".join(supported_models)})')
 
 
 class Fossil(torch.nn.Module):
@@ -96,33 +100,31 @@ class Fossil(torch.nn.Module):
         fully_shard(self, **fsdp_kwargs)
 
     def preprocess(self, mask_image: Image, image_size: int, crop_center: bool = True) -> torch.Tensor:
+        """crop_center (default): the center image_size x image_size crop at the image's own resolution, as vlm-tuning's
+        crop_transform, which the encoders were aligned on (crop first, no resize); an image whose shorter side is
+        smaller than image_size is enlarged to it first. crop_center=False: the whole image resized to a height of
+        image_size, as in the original dinov3 preprocess notebook."""
         mean = (0.485, 0.456, 0.406)
         std = (0.229, 0.224, 0.225)
         patch_size = 16
 
-        w, h = mask_image.size
-        # if crop center is true the smaller dimension will have the target size, 
-        # if not the height dimension will have the target size as in the original dinov3 preprocess notebook
-        if not crop_center or w > h:
+        if crop_center:
+            if min(mask_image.size) < image_size:
+                # too small to crop: enlarged so that its shorter side is image_size
+                mask_image = TF.resize(mask_image, image_size)
+            w, h = mask_image.size
+            left = w // 2 - image_size // 2
+            top = h // 2 - image_size // 2
+            input = TF.to_tensor(mask_image.crop((left, top, left + image_size, top + image_size)))
+
+        else:
+            w, h = mask_image.size
             h_patches = int(image_size / patch_size)
             w_patches = int((w * image_size) / (h * patch_size))
-        
-        else:
-            w_patches = int(image_size / patch_size)
-            h_patches = int((h * image_size) / (w * patch_size))
-            
-        # TF.resize takes (height, width)
-        input = TF.to_tensor(TF.resize(mask_image, (h_patches * patch_size, w_patches * patch_size)))
-        input = TF.normalize(input, mean=mean, std=std)
+            # TF.resize takes (height, width)
+            input = TF.to_tensor(TF.resize(mask_image, (h_patches * patch_size, w_patches * patch_size)))
 
-        if crop_center:
-            _, h, w = input.shape
-            center = (int(h / 2), int(w / 2))
-            return input[:, 
-                        center[0]-int(image_size/2):center[0]+int(image_size/2), 
-                        center[1]-int(image_size/2):center[1]+int(image_size/2)]
-    
-        return input
+        return TF.normalize(input, mean=mean, std=std)
     
 
     def get_image_tensors(self, images: list, size=None):
@@ -230,6 +232,113 @@ class Dinotxt(Fossil):
             x = x[:, :1024]
 
         return x
+
+def vlm_tuning_checkpoint(enc_conf, weight_path=None):
+    """Weights of a vlm-tuning run: weight_path if given, else from its output_dir the best checkpoint
+    (checkpoint-<epoch>.ckpt, kept by its ModelCheckpoint), the consolidated deepspeed one or last.ckpt."""
+    if weight_path:
+        return weight_path
+    out = enc_conf.output_dir
+    best = sorted(glob(os.path.join(out, 'checkpoint-*.ckpt')), key=os.path.getmtime)
+    candidates = best[-1:] + [os.path.join(out, 'pytorch_model', 'pytorch_model.bin'), os.path.join(out, 'last.ckpt')]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f'no vlm-tuning checkpoint in {out} (checkpoint-*.ckpt, pytorch_model/pytorch_model.bin, '
+                            'last.ckpt); set encoder.weight_path')
+
+
+def head_module(kind, input_dim, output_dim):
+    # vlm-tuning model/dual_encoder.build_head (same module names, so its weights load)
+    if kind == 'linear':
+        return torch.nn.Linear(input_dim, output_dim)
+    if kind == 'mlp':
+        hidden = max(input_dim, output_dim)
+        return torch.nn.Sequential(torch.nn.Linear(input_dim, hidden), torch.nn.GELU(), torch.nn.Linear(hidden, output_dim))
+    raise ValueError(f'unknown aligner head {kind} (qformer, mlp, linear)')
+
+
+class DualEncoder(Fossil):
+    """Vision side of a vlm-tuning DualEncoder run (DINOv3 SSL backbone aligned with a text encoder): the SSL backbone,
+    its LoRA adapters when the run trained them, and the trained vision head (Q-Former, MLP or linear).
+
+    encoder.config_path: config.yaml of the vlm-tuning run; encoder.weight_path: its checkpoint (empty: found in the
+    run's output_dir). Outputs, with a Q-Former head:
+        return_grid=True   the query outputs, b x queries x embed_dim (the tokens compared with the text in
+                           vlm-tuning), e.g. for multimodal 'projector' (one visual token per query, as in BLIP-2)
+        return_grid=False  one vector per image, b x embed_dim, pooled as in vlm-tuning ('max' pooling: the mean of
+                           the queries), e.g. for 'mapper'
+    With an MLP/linear head: the backbone patch tokens (grid) or the head output (global).
+    encoder.train_head: also train the vision head in SFT (the backbone follows train.stage2.frozen_encoder)."""
+
+    def __init__(self, conf):
+        super().__init__()
+        enc_conf = OmegaConf.load(conf.encoder.config_path)
+        if enc_conf.model.name.split(':')[0] != 'DualEncoder':
+            raise ValueError(f'{conf.encoder.config_path} is not a vlm-tuning DualEncoder run ({enc_conf.model.name})')
+        v, a, lora = enc_conf.model.vision, enc_conf.model.aligner, enc_conf.model.lora
+        repo = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+        self.backbone = torch.hub.load(repo, v.arch, source='local', pretrained=False)
+        load_backbone_weights(self.backbone, v.weights, v.get('branch', 'teacher'))
+        if lora.apply and lora.encoder in ('both', 'vision'):
+            config = LoraConfig(r=lora.r, lora_alpha=lora.alpha, target_modules=list(lora.get('vision_targets', ['qkv'])),
+                                lora_dropout=lora.dropout_rate, bias='none')
+            inject_adapter_in_model(config, self.backbone)
+
+        vision_dim = self.backbone.embed_dim
+        self.kind = a.vision
+        self.tokens = v.get('tokens', 'cls+patch')
+        self.pooled = v.get('pooled', 'cls')
+        self.pooling = a.get('pooling', 'mean')
+        if self.kind == 'qformer':
+            self.head = QFormer(vision_dim, a.embed_dim, a.queries, layers=a.layers, dim=a.width, heads=a.heads,
+                                dropout=a.dropout)
+            self.grid_dim = a.embed_dim
+        else:
+            self.head = head_module(self.kind, 2 * vision_dim if self.pooled == 'cls+mean' else vision_dim, a.embed_dim)
+            self.grid_dim = vision_dim
+        self.dim = a.embed_dim
+        self.im_size = conf.encoder.size
+        self.train_head = conf.encoder.get('train_head', False)
+
+        path = vlm_tuning_checkpoint(enc_conf, conf.encoder.get('weight_path'))
+        print('LOADING DUAL ENCODER WEIGHTS AT', path)
+        ckpt = torch.load(path, map_location='cpu', weights_only=False)
+        ckpt = ckpt.get('state_dict', ckpt)
+        # vlm-tuning keys: [wrappers.]model.vision_head.<head key>, [wrappers.]model.backbone.<backbone key>
+        head = {m.group(1): w for k, w in ckpt.items() if (m := re.search(r'(?:^|\.)vision_head\.(.+)', k))}
+        backbone = {m.group(1): w for k, w in ckpt.items() if (m := re.search(r'(?:^|\.)model\.backbone\.(.+)', k))}
+        missing, unexpected = self.head.load_state_dict(head, strict=False)
+        if missing or unexpected:
+            raise RuntimeError(f'{path}: vision head does not match the config: missing {missing[:5]}, '
+                               f'unexpected {unexpected[:5]}')
+        # the backbone base weights are the SSL ones loaded above; the checkpoint adds the LoRA adapters, if any
+        missing, unexpected = self.backbone.load_state_dict(backbone, strict=False)
+        missing_lora = [k for k in missing if 'lora_' in k]
+        if missing_lora or unexpected:
+            raise RuntimeError(f'{path}: backbone weights do not match: missing adapters {missing_lora[:5]}, '
+                               f'unexpected {unexpected[:5]}')
+        print(f'loaded the {self.kind} head ({len(head)} tensors) and {len(backbone)} backbone tensors')
+
+    def fsdp(self, fsdp_kwargs):
+        for block in self.backbone.blocks:
+            fully_shard(block, **fsdp_kwargs)
+
+        fully_shard(self, **fsdp_kwargs)
+
+    def forward(self, inputs, return_grid):
+        weight = self.backbone.patch_embed.proj.weight
+        out = self.backbone.forward_features(inputs.to(weight.device, dtype=weight.dtype))
+        cls, patches = out['x_norm_clstoken'], out['x_norm_patchtokens']
+        if self.kind == 'qformer':
+            queries = self.head(torch.cat([cls[:, None], patches], 1) if self.tokens == 'cls+patch' else patches)
+            if return_grid:
+                return queries
+            return queries[:, 0] if self.pooling == 'first' else queries.mean(1)
+        if return_grid:
+            return patches
+        return self.head(torch.cat([cls, patches.mean(1)], -1) if self.pooled == 'cls+mean' else cls)
+
 
 class Dinov3(Fossil):
     def __init__(self, conf):

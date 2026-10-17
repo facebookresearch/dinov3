@@ -7,6 +7,9 @@ loading the small checkpoint on top of a fresh model gives back exactly the full
 never matches and is kept). The projection, scale embedding and LoRA adapters are always kept. The small checkpoints need the same
 pretrained weights (paths in config.yaml) to load. Needs memory for about two copies of the model.
 
+Checkpoints already in the small format are shrunk too when they still hold pretrained weights (save_checkpoint kept
+the tied lm_head.weight of Qwen3 decoders, the size of the embedding matrix, before it was fixed).
+
 Without --in_place the small checkpoint is written next to the full one as <name>.small.pt.
 
 Usage:
@@ -30,15 +33,23 @@ def size_mb(state_dict):
 
 def shrink(base, path, in_place):
     full = torch.load(path, map_location='cpu')
-    if isinstance(full, dict) and full.get('format') == CHECKPOINT_FORMAT:
-        print(f'{path}: already small, skipped')
-        return
-    if set(full) != set(base):
+    small = isinstance(full, dict) and full.get('format') == CHECKPOINT_FORMAT
+    if small:
+        # already in the small format, but it may still hold pretrained weights, e.g. the tied lm_head.weight that
+        # save_checkpoint kept before it saw tied weights under all their names
+        full = full['state_dict']
+        mismatch = set(full) - set(base)
+    else:
+        mismatch = set(full) ^ set(base)
+    if mismatch:
         raise RuntimeError(f'{path} does not match the model built from config.yaml: '
                            f'{len(set(full) - set(base))} unexpected and {len(set(base) - set(full))} missing keys')
 
     keep = {k: v for k, v in full.items()
             if 'lora_' in k or k.startswith(TRAINED_MODULES) or v.dtype != base[k].dtype or not torch.equal(v, base[k])}
+    if small and len(keep) == len(full):
+        print(f'{path}: already small, nothing to drop')
+        return
 
     out = path if in_place else path[:-len('.pt')] + '.small.pt'
     tmp = out + '.tmp'

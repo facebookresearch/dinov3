@@ -33,7 +33,9 @@ def checkpoint_state_dict(model, state_dict=None):
     scale embedding and every weight the model was loaded with (load_checkpoint), e.g. the SFT projection when it is frozen during RL.
     Frozen pretrained encoder/decoder weights are left out: FossilVL(conf) builds them again from their sources."""
     state_dict = model.state_dict() if state_dict is None else state_dict
-    frozen = {name for name, p in model.named_parameters() if not p.requires_grad}
+    # remove_duplicate=False: tied weights (e.g. Qwen3's lm_head.weight, the embedding matrix) under every name, else
+    # the second name is not seen as frozen and the whole matrix is saved
+    frozen = {name for name, p in model.named_parameters(remove_duplicate=False) if not p.requires_grad}
     loaded = getattr(model, 'loaded_keys', set())
     return {k: v for k, v in state_dict.items()
             if k not in frozen or 'lora_' in k or k.startswith(TRAINED_MODULES) or k in loaded}
@@ -97,10 +99,12 @@ class FossilVL(torch.nn.Module):
         return max(encoder_sizes) if max(sizes) >= max(encoder_sizes) else min(encoder_sizes)
 
     def mm_per_pixel(self, sizes, scales, input_size=None):
-        """Physical size of one encoder input pixel per image: the center crop covers the shorter side (sizes, in
-        pixels of the loaded image, scales in mm per pixel), resized to the encoder input size."""
+        """Physical size of one encoder input pixel per image (scales: mm per pixel of the loaded image). The center
+        crop is taken at the image's own resolution (encoder preprocess), so it is the image's scale, except for an
+        image whose shorter side (sizes, in pixels) is smaller than the input size: it is enlarged to it first."""
         side = input_size or self.encoder_sizes()[0]
-        return torch.as_tensor(sizes, dtype=torch.float32) * torch.as_tensor(scales, dtype=torch.float32) / side
+        sizes = torch.as_tensor(sizes, dtype=torch.float32)
+        return torch.as_tensor(scales, dtype=torch.float32) * (sizes / side).clamp(max=1)
 
     def project(self, features, sizes=None, scales=None, input_size=None):
         """Visual tokens of encoder features, with the scale token when scale_token is enabled."""
