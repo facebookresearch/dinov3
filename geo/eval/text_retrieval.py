@@ -15,6 +15,8 @@ Encoders (--models), as <kind>:<name>:
                            any other model id uses mean pooling
     clip:<name>            OpenAI CLIP text tower (clip package), 77 tokens
     dinotxt:<weights.pth>  DINO-TXT text tower (torch hub of this repository; --bpe for the tokenizer vocabulary)
+    jina[:<model>]         jina-clip-v2 text tower (default jinaai/jina-clip-v2), descriptions as they are;
+    jina-query[:<model>]   the same with jina's retrieval query instruction (both need transformers 4.x and einops)
     tfidf, random          lexical and chance baselines
 
 Usage:
@@ -157,6 +159,25 @@ class DINOTxtEncoder:
                           .float().cpu() for i in range(0, len(texts), self.batch_size)]).numpy()
 
 
+class JinaEncoder:
+    """Text tower of jina-clip-v2 (jina-embeddings-v3, multilingual, up to 8192 tokens) through its own encode_text;
+    task 'retrieval.query' adds jina's query instruction. Its model code needs transformers 4.x and einops."""
+
+    def __init__(self, model_id, device, batch_size, max_length=None, task=None):
+        from transformers import AutoModel
+        self.model = AutoModel.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+        self.model = self.model.float().to(device).eval()  # its text tower is built in bfloat16 otherwise
+        self.tokenizer = self.model.get_tokenizer()
+        self.batch_size, self.task, self.max_length = batch_size, task, max_length or 512
+
+    def truncated(self, texts):
+        return float(np.mean([len(self.tokenizer(t)['input_ids']) > self.max_length for t in texts]))
+
+    @torch.no_grad()
+    def encode(self, texts):
+        return self.model.encode_text(list(texts), task=self.task, batch_size=self.batch_size, max_length=self.max_length)
+
+
 class TfidfEncoder:
     """Lexical baseline: word 1-2 grams, fitted on the descriptions being ranked."""
     max_length = None
@@ -187,11 +208,14 @@ def build_encoder(spec, args):
         return CLIPEncoder(name, args.device, args.batch_size)
     if kind == 'dinotxt':
         return DINOTxtEncoder(name, args.device, args.batch_size, args.bpe)
+    if kind in ('jina', 'jina-query'):
+        return JinaEncoder(name or 'jinaai/jina-clip-v2', args.device, args.batch_size, args.max_length,
+                           task='retrieval.query' if kind == 'jina-query' else None)
     if kind == 'tfidf':
         return TfidfEncoder()
     if kind == 'random':
         return RandomEncoder()
-    raise ValueError(f'unknown encoder {spec} (hf:, clip:, dinotxt:, tfidf, random)')
+    raise ValueError(f'unknown encoder {spec} (hf:, clip:, dinotxt:, jina, jina-query, tfidf, random)')
 
 
 # --------------------------------------------------------------------------------------------------------- metrics
