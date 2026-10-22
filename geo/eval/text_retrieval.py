@@ -231,18 +231,21 @@ def jaccard_matrix(label_sets):
     return inter / (sizes[:, None] + sizes[None, :] - inter)
 
 
-def retrieval_metrics(embeddings, keys, jaccard):
-    """Exact-class R@K and mAP, and Jaccard-graded nDCG@10, every item against all the others."""
+def retrieval_metrics(embeddings, keys, jaccard, exclude=None):
+    """Exact-class R@K and mAP, and Jaccard-graded nDCG@10, every item against all the others. exclude: optional
+    [n, n] boolean mask of further pairs left out of each query's ranking (e.g. the same image under other labels,
+    or images of the same slide); the query itself is always left out."""
     x = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True).clip(min=1e-12)
     sim = x @ x.T
-    np.fill_diagonal(sim, -np.inf)  # a query never retrieves itself
-    order = np.argsort(-sim, axis=1)[:, :-1]  # self (-inf) is last
+    excluded = np.eye(len(keys), dtype=bool) if exclude is None else (exclude | np.eye(len(keys), dtype=bool))
+    sim[excluded] = -np.inf
+    order = np.argsort(-sim, axis=1)
     keys = np.array(keys)
 
     hits = {k: [] for k in KS}
     aps, ndcgs = [], []
     for q in range(len(keys)):
-        ranked = order[q]
+        ranked = order[q][~excluded[q, order[q]]]  # a query never retrieves itself (nor the excluded items)
         relevant = keys[ranked] == keys[q]
         if relevant.any():
             for k in KS:

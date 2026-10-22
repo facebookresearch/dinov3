@@ -87,7 +87,9 @@ class Fossil(torch.nn.Module):
     def __init__(self, conf=None ):
         super().__init__()
         if conf is not None:
-            self.model = create_and_load_model(conf.encoder.config_path, conf.encoder.weight_path)
+            # encoder.branch: teacher (default) or student backbone of the SSL checkpoint
+            self.model = create_and_load_model(conf.encoder.config_path, conf.encoder.weight_path,
+                                               conf.encoder.get('branch', 'teacher'))
             self.dim = self.model.patch_embed.proj.weight.shape[0]
             self.im_size = conf.encoder.size
         
@@ -153,12 +155,16 @@ class Fossil(torch.nn.Module):
 class Dinotxt(Fossil):
     def __init__(self, conf):
         super().__init__()
+        # pretrained: DINO-TXT's own backbone (LVD-1689M, downloaded by the hub) and vision head + text weights, so the
+        # model is the off-the-shelf DINO-TXT when no vlm-tuning run is loaded below (pretrained=False would leave it
+        # randomly initialised); a run's checkpoint then replaces the weights it holds
+        repo = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
         model, _ = torch.hub.load(
-            './', 
-            'dinov3_vitl16_dinotxt_tet1280d20h24l', 
+            repo,
+            'dinov3_vitl16_dinotxt_tet1280d20h24l',
             source='local',
-            weights='/nethome/recpinfo/users/fibz/cache/dinov3_vitl16_dinotxt.pth',
-            pretrained=False
+            weights=conf.encoder.get('dinotxt_weights', '/nethome/recpinfo/users/fibz/cache/dinov3_vitl16_dinotxt.pth'),
+            pretrained=True
         )
         
         self.model = model
@@ -200,10 +206,9 @@ class Dinotxt(Fossil):
 
                 print('loading weights...')
                 missing, unexpected = visual.load_state_dict(visual_state, strict=False)
-                # frozen weights can be left out of the checkpoint (deepspeed exclude_frozen_parameters); the backbone
-                # was loaded above when it is an SSL one, and comes from the checkpoint otherwise
-                if backbone_weights:
-                    missing = [k for k in missing if not k.startswith('backbone.')]
+                # frozen weights can be left out of the checkpoint (deepspeed exclude_frozen_parameters): the backbone
+                # keeps the pretrained (or SSL, backbone_weights) weights loaded above
+                missing = [k for k in missing if not k.startswith('backbone.')]
                 if missing or unexpected or not visual_state:
                     raise RuntimeError(f'{path} does not match the DINO-TXT vision tower: {len(visual_state)} vision '
                                        f'weights, missing {missing[:5]}, unexpected {unexpected[:5]}')
@@ -277,7 +282,10 @@ class DualEncoder(Fossil):
         if enc_conf.model.name.split(':')[0] != 'DualEncoder':
             raise ValueError(f'{conf.encoder.config_path} is not a vlm-tuning DualEncoder run ({enc_conf.model.name})')
         v, a, lora = enc_conf.model.vision, enc_conf.model.aligner, enc_conf.model.lora
-        repo = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+        if v.get('type', 'ssl') != 'ssl':
+            raise NotImplementedError(f"{conf.encoder.config_path}: vision.type {v.type} runs are not supported here yet "
+                                      "(only the SSL backbone, vision.type 'ssl')")
+        repo =os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
         self.backbone = torch.hub.load(repo, v.arch, source='local', pretrained=False)
         load_backbone_weights(self.backbone, v.weights, v.get('branch', 'teacher'))
         if lora.apply and lora.encoder in ('both', 'vision'):

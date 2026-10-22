@@ -1,0 +1,11 @@
+# DINOv3 SSL backbone trained on the thin sections in this project (teacher weights of the checkpoint, encoder.branch:
+# student for the other), CLS embedding;
+# config_path is relative to the repository root (run the benchmark from there)
+encoder:
+  name: 'Fossil'
+  config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
+  branch: teacher  # teacher (EMA, default) or student backbone of the checkpoint
+  weight_path: '/nethome/recpinfo/users/fibz/data/checkpoint/dino/fossil-datasetv4-512/ckpt/11999/consolidated_model/pytorch_model.bin'
+  size: [256, 512]
+data:
+  root: '/nethome/atena_projetos/fvlk/data/Dataset/v4/images/'

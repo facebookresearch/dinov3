@@ -1,0 +1,11 @@
+# off-the-shelf DINO-TXT vision tower (DINOv3 ViT-L backbone + DINO-TXT's vision head); config_path '' loads no
+# vlm-tuning run. average_patch: true gives DINO-TXT's own 2048-d embedding (CLS + mean patch), false the CLS half
+encoder:
+  name: 'DINOtxt'
+  config_path: ''  # or a vlm-tuning DINOtxt run's config.yaml to evaluate that run
+  weight_path: ''
+  dinotxt_weights: '/nethome/recpinfo/users/fibz/cache/dinov3_vitl16_dinotxt.pth'
+  average_patch: true
+  size: [256, 512]
+data:
+  root: '/nethome/atena_projetos/fvlk/data/Dataset/v4/images/'

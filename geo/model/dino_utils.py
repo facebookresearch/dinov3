@@ -19,27 +19,18 @@ def create_model(cfg_path):
     )
 
 
-def create_and_load_model(cfg_path, weight_path):
+def create_and_load_model(cfg_path, weight_path, branch='teacher'):
+    """ViT-L/16 of the SSL training config with the backbone of the checkpoint: the teacher (EMA of the student, the
+    one DINOv3 evaluates and releases) by default, or the student."""
     conf = OmegaConf.load(cfg_path)
     model = DinoVisionTransformer(
         embed_dim=1024,
         depth=24,
         num_heads=16,
-        layerscale_init=1e-05, 
+        layerscale_init=1e-05,
         **conf.student,
     )
-
-    state = torch.load(weight_path, weights_only=False)
-    new_state = {}
-    for k, v in state['model'].items():
-        if 'dino_head' in k or 'ibot_head' in k:
-            pass
-        elif 'student' in k:
-            name = k.replace('student.backbone.', '')
-            new_state[name] = v
-            
-    model.load_state_dict(new_state)
-    return model
+    return load_backbone_weights(model, weight_path, branch)
 
 
 def load_backbone_weights(backbone, weight_path, branch='teacher'):
