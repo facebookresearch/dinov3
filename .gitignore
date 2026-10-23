@@ -22,7 +22,7 @@ resultados
 *.swp
 # Ignore vscode directory
 .vscode/
-
+*.docx
 .idea
 *.png
 *.json

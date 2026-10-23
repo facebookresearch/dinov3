@@ -172,6 +172,8 @@ class Dinotxt(Fossil):
         self.grid_dim = 1024  # width of each patch token (return_grid=True)
         self.im_size = conf.encoder.size
         self.encode_image = model.encode_image
+        # only the vision tower is used for captioning and retrieval; forward and fsdp expect it in self.model
+        visual = model.visual_model
 
         if os.path.exists(conf.encoder.config_path):
             enc_conf = OmegaConf.load(conf.encoder.config_path)
@@ -181,9 +183,8 @@ class Dinotxt(Fossil):
                 load_backbone_weights(model.visual_model.backbone, backbone_weights,
                                       enc_conf.model.get('backbone_branch', 'teacher'))
 
-            # only the vision tower is used for captioning. With LoRA on the whole model (not vision_head_only) its
-            # attention layers have adapters; with vision_head_only LoRA is on the text tower only, so none here
-            visual = self.model.visual_model
+            # with LoRA on the whole model (not vision_head_only) the vision tower's attention layers have adapters;
+            # with vision_head_only LoRA is on the text tower only, so none here
             vision_head_only = enc_conf.model.get('vision_head_only', False)
             if enc_conf.model.lora.apply and not vision_head_only:
                 config = LoraConfig(
@@ -213,8 +214,7 @@ class Dinotxt(Fossil):
                     raise RuntimeError(f'{path} does not match the DINO-TXT vision tower: {len(visual_state)} vision '
                                        f'weights, missing {missing[:5]}, unexpected {unexpected[:5]}')
 
-            self.model = visual
-                    
+        self.model = visual
         print(self.model)
 
     def fsdp(self, fsdp_kwargs):
