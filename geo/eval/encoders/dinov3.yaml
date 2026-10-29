@@ -1,8 +1,0 @@
-# off-the-shelf DINOv3 ViT-L/16 (HuggingFace), CLS embedding
-encoder:
-  name: 'DINOv3'
-  config_path: ''
-  weight_path: 'facebook/dinov3-vitl16-pretrain-lvd1689m'
-  size: [256, 512]
-data:
-  root: '/nethome/atena_projetos/fvlk/data/Dataset/v4/images/'

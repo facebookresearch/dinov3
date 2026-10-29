@@ -23,6 +23,8 @@ resultados
 # Ignore vscode directory
 .vscode/
 *.docx
+__pycache__/
+**/__pycache__/
 .idea
 *.png
 *.json
@@ -32,4 +34,5 @@ GPTrequest.py
 *.ini
 geo/eval/reliability/*
 geo/eval/judge_comparison/*
+geo/eval/*md
 wandb

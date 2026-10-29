@@ -1,9 +1,0 @@
-# vision side of a vlm-tuning DualEncoder run (SSL backbone + Q-Former or linear head aligned with e5): the pooled head
-# output; vision.type dinotxt runs are not supported by geo's DualEncoder encoder yet
-encoder:
-  name: 'DualEncoder'
-  config_path: '/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/dual-qformer/config.yaml'  # vlm-tuning run
-  weight_path: ''  # empty: the run's best checkpoint-*.ckpt (else last.ckpt)
-  size: [256, 512]
-data:
-  root: '/nethome/atena_projetos/fvlk/data/Dataset/v4/images/'

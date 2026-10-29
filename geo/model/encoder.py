@@ -207,9 +207,14 @@ class Dinotxt(Fossil):
 
                 print('loading weights...')
                 missing, unexpected = visual.load_state_dict(visual_state, strict=False)
-                # frozen weights can be left out of the checkpoint (deepspeed exclude_frozen_parameters): the backbone
-                # keeps the pretrained (or SSL, backbone_weights) weights loaded above
-                missing = [k for k in missing if not k.startswith('backbone.')]
+                # frozen weights can be left out of the checkpoint (deepspeed exclude_frozen_parameters, LoRA-only
+                # saves): with LoRA the whole tower is frozen, backbone and vision head, and keeps the pretrained (or
+                # SSL, backbone_weights) weights loaded above, so only missing adapters are an error; without LoRA the
+                # vision head is trained (vision_head_only) and must be in the checkpoint
+                if any('lora_' in k for k in visual.state_dict()):
+                    missing = [k for k in missing if 'lora_' in k]
+                else:
+                    missing = [k for k in missing if not k.startswith('backbone.')]
                 if missing or unexpected or not visual_state:
                     raise RuntimeError(f'{path} does not match the DINO-TXT vision tower: {len(visual_state)} vision '
                                        f'weights, missing {missing[:5]}, unexpected {unexpected[:5]}')
