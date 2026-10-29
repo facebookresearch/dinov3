@@ -251,18 +251,36 @@ class Dinotxt(Fossil):
         return x
 
 def vlm_tuning_checkpoint(enc_conf, weight_path=None):
-    """Weights of a vlm-tuning run: weight_path if given, else from its output_dir the best checkpoint
-    (checkpoint-<epoch>.ckpt, kept by its ModelCheckpoint), the consolidated deepspeed one or last.ckpt."""
+    """Weights of a vlm-tuning run: weight_path if given, else from its output_dir the consolidated deepspeed one
+    (pytorch_model/pytorch_model.bin, written by consolidate.py), the best checkpoint (checkpoint-<epoch>.ckpt, kept by
+    its ModelCheckpoint) or last.ckpt."""
     if weight_path:
         return weight_path
     out = enc_conf.output_dir
     best = sorted(glob(os.path.join(out, 'checkpoint-*.ckpt')), key=os.path.getmtime)
-    candidates = best[-1:] + [os.path.join(out, 'pytorch_model', 'pytorch_model.bin'), os.path.join(out, 'last.ckpt')]
+    candidates = [os.path.join(out, 'pytorch_model', 'pytorch_model.bin')] + best[-1:] + [os.path.join(out, 'last.ckpt')]
     for path in candidates:
         if os.path.exists(path):
             return path
-    raise FileNotFoundError(f'no vlm-tuning checkpoint in {out} (checkpoint-*.ckpt, pytorch_model/pytorch_model.bin, '
+    raise FileNotFoundError(f'no vlm-tuning checkpoint in {out} (pytorch_model/pytorch_model.bin, checkpoint-*.ckpt, '
                             'last.ckpt); set encoder.weight_path')
+
+
+def load_vlm_tuning_state(path):
+    """State dict of a vlm-tuning checkpoint: a lightning .ckpt file, a consolidated pytorch_model.bin, or a deepspeed
+    checkpoint (lightning saves those as a .ckpt folder), consolidated here in memory as vlm-tuning's consolidate.py
+    does. Frozen weights may be left out (deepspeed exclude_frozen_parameters, LoRA-only saves)."""
+    if os.path.isdir(path):
+        try:
+            from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+        except ImportError as e:
+            raise ImportError(f'{path} is a deepspeed checkpoint: install deepspeed, or convert it with vlm-tuning '
+                              'consolidate.py and set encoder.weight_path to its pytorch_model.bin') from e
+        # lightning saves under the tag 'checkpoint'; deepspeed's 'latest' file names it too
+        tag = None if os.path.isfile(os.path.join(path, 'latest')) else 'checkpoint'
+        return get_fp32_state_dict_from_zero_checkpoint(path, tag=tag)
+    ckpt = torch.load(path, map_location='cpu', weights_only=False)
+    return ckpt.get('state_dict', ckpt)
 
 
 def head_module(kind, input_dim, output_dim):
@@ -323,8 +341,7 @@ class DualEncoder(Fossil):
 
         path = vlm_tuning_checkpoint(enc_conf, conf.encoder.get('weight_path'))
         print('LOADING DUAL ENCODER WEIGHTS AT', path)
-        ckpt = torch.load(path, map_location='cpu', weights_only=False)
-        ckpt = ckpt.get('state_dict', ckpt)
+        ckpt = load_vlm_tuning_state(path)
         # vlm-tuning keys: [wrappers.]model.vision_head.<head key>, [wrappers.]model.backbone.<backbone key>
         head = {m.group(1): w for k, w in ckpt.items() if (m := re.search(r'(?:^|\.)vision_head\.(.+)', k))}
         backbone = {m.group(1): w for k, w in ckpt.items() if (m := re.search(r'(?:^|\.)model\.backbone\.(.+)', k))}

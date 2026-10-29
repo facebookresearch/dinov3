@@ -3,7 +3,7 @@ encoder:
   # LoRA adapters if trained, and the Q-Former, whose query outputs become the visual tokens
   name: 'DualEncoder'
   config_path: "/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/dual-qformer/config.yaml" # vlm-tuning run
-  weight_path: "" # empty: the run's best checkpoint-*.ckpt (else last.ckpt); set it to pin one checkpoint
+  weight_path: "" # empty: the run's pytorch_model/pytorch_model.bin (consolidate.py), else its best checkpoint-*.ckpt, else last.ckpt; set it to pin one checkpoint
   train_head: False # also train the Q-Former in SFT (stage 1 and 2), the backbone stays frozen
   average_patch: False
   size: [256, 512] # image size
