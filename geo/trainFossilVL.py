@@ -54,6 +54,36 @@ def val_epoch(model, loader):
     return sum(epoch_loss)/len(epoch_loss)
 
 
+def vlm_tuning_encoder_conf(conf):
+    # encoder.config_path a vlm-tuning run's config.yaml (it has model.name, an SSL config has MODEL): the encoder
+    # settings come from the run, overwriting the ones in --conf / --average_local
+    run = OmegaConf.load(conf.encoder.config_path)
+    run_name = run.get('model', {}).get('name')
+    if not run_name:
+        return
+
+    family = run_name.split(':')[0]
+    if family not in ('DINOtxt', 'DualEncoder', 'CLIP'):
+        raise ValueError(f'{conf.encoder.config_path}: vlm-tuning {family} runs are not supported (DINOtxt, DualEncoder, CLIP)')
+
+    # vlm-tuning trains on geo at dataset.resolutions (two: both magnifications, as encoder.size here), else
+    # model.image_size; runs saved with the removed dataset.multiresolution false used the largest resolution only
+    if run.get('dataset', {}).get('name') == 'geo' and run.dataset.get('resolutions'):
+        size = list(run.dataset.resolutions)
+        if run.dataset.get('multiresolution') is False:
+            size = size[-1:]
+    else:
+        size = [run.model.get('image_size', 224)]
+
+    run_values = {'name': family, 'size': size, 'average_patch': bool(run.model.get('average_local', False))}
+    current = OmegaConf.to_container(conf.encoder, resolve=True)
+    for key, value in run_values.items():
+        old = current.get(key)
+        if old is not None and old != value:
+            print(f'WARNING: encoder.{key} overwritten by the vlm-tuning run {conf.encoder.config_path}: {old} -> {value}')
+        conf.encoder[key] = value
+
+
 def train_encoder_head(model):
     # DualEncoder with encoder.train_head: its vision head (e.g. the Q-Former aligned in vlm-tuning) is trained with the
     # projection in both stages, while the backbone stays frozen (stage 2: unless train.stage2.frozen_encoder is false)
@@ -80,6 +110,7 @@ if __name__ == '__main__':
         conf.encoder.config_path = args.config
 
     conf.encoder.average_patch = args.average_local
+    vlm_tuning_encoder_conf(conf)
     conf.data.campos = args.campos  # recorded in the saved config.yaml
 
     os.makedirs(conf.save_path, exist_ok=True)

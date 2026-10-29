@@ -87,6 +87,13 @@ class Fossil(torch.nn.Module):
     def __init__(self, conf=None ):
         super().__init__()
         if conf is not None:
+            # a vlm-tuning run's config.yaml (model.name 'DualEncoder:...' or 'DINOtxt:...') is not an SSL config
+            run_name = OmegaConf.load(conf.encoder.config_path).get('model', {}).get('name')
+            if run_name:
+                fam = run_name.split(':')[0]
+                hint = f"encoder.name: '{fam}'" if fam in ('DualEncoder', 'DINOtxt') else 'the matching encoder'
+                raise ValueError(f"{conf.encoder.config_path} is a vlm-tuning run ({run_name}), not a DINOv3 SSL "
+                                 f"config; load it with {hint} (see geo/config/dual.yaml, geo/config/dinotxt.yaml)")
             # encoder.branch: teacher (default) or student backbone of the SSL checkpoint
             self.model = create_and_load_model(conf.encoder.config_path, conf.encoder.weight_path,
                                                conf.encoder.get('branch', 'teacher'))
