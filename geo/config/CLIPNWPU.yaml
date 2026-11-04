@@ -1,7 +1,7 @@
 encoder:
   name: 'CLIP' 
   weight_path: 'ViT-L/14'
-  config_path: '/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/NWPU-CLIP-large14-LoRA-Seed-batch512-t5/config.yaml' 
+  config_path: '/path/to/cluster_home/data/checkpoint/vlm-finetuning/NWPU-CLIP-large14-LoRA-Seed-batch512-t5/config.yaml' 
   size: [224] # image size
 decoder:
   # name: "Qwen/Qwen3-4B-Thinking-2507"
@@ -23,9 +23,9 @@ train:
     learning_rate: 0.0002
     epochs: 4
 data:
-  root: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/images"
-  train: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_train_all.json"
-  test: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_val_all.json"
-save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/CLIP_bs256_t25-QWEN3-0.6-mapper"
+  root: "/path/to/cluster_home/data/dataset/nwpu/images"
+  train: "/path/to/cluster_home/data/dataset/nwpu/conversation_train_all.json"
+  test: "/path/to/cluster_home/data/dataset/nwpu/conversation_val_all.json"
+save_path: "/path/to/cluster_home/data/checkpoints/fossil/nwpu/CLIP_bs256_t25-QWEN3-0.6-mapper"
 
 # "facebook/dinov3-vitl16-pretrain-lvd1689m"

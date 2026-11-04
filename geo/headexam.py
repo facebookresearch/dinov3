@@ -15,17 +15,17 @@ Image.MAX_IMAGE_PIXELS = None
 
 
 if __name__ == '__main__':
-    weight_path = '/nethome/recpinfo/users/fibz/data/checkpoints/dinov3/ckpt/9999/consolidated_model/pytorch_model.bin'
+    weight_path = f'{os.environ["CLUSTER_HOME"]}/data/checkpoints/dinov3/ckpt/9999/consolidated_model/pytorch_model.bin'
     cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
     
-    dataset = json.load(open('/nethome/atena_projetos/fibz/data/Dataset/caption_dataset_train.json', 'r'))
+    dataset = json.load(open(f'{os.environ["PROJECT_HOME"]}/data/Dataset/caption_dataset_train.json', 'r'))
     model = load_trained_model(cfg_path, weight_path)
     dino_head = load_dino_head(cfg_path, weight_path)
     counts = [0]*dino_head.last_layer.out_features
     
     for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
         guid = sample['cd_guid']
-        image = Image.open(f'/nethome/atena_projetos/fibz/data/Dataset/images/{guid}.png').convert('RGB')
+        image = Image.open(f'{os.environ["PROJECT_HOME"]}/data/Dataset/images/{guid}.png').convert('RGB')
         image = resize_transform(image)
         embeddings = model.forward(image.unsqueeze(0), is_training=False)
         output = dino_head(embeddings)

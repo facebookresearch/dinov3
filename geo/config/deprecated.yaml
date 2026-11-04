@@ -1,6 +1,6 @@
 encoder:
   name: 'Fossil'
-  weight_path: '/nethome/recpinfo/users/fibz/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
+  weight_path: '/path/to/cluster_home/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
   config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml' 
   size: 512
   multi_modal: 'mapper' 
@@ -22,7 +22,7 @@ train:
     learning_rate: 0.0001
     epochs: 8
 data:
-  root: "/nethome/atena_projetos/fibz/images"
-  train: "/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_train.json"
-  test: "/nethome/atena_projetos/fibz/data/Dataset/simple_conversation/conv_test.json"
-save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil_vl_"
+  root: "/path/to/project_home/images"
+  train: "/path/to/project_home/data/Dataset/simple_conversation/conv_train.json"
+  test: "/path/to/project_home/data/Dataset/simple_conversation/conv_test.json"
+save_path: "/path/to/cluster_home/data/checkpoints/fossil_vl_"

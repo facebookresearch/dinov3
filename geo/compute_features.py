@@ -50,7 +50,7 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true', help='debug mode', default=False)
     parser.add_argument('--dim', default=512, type=int, help='image dimension')
     parser.add_argument('--config', type=str, default='dinov3/configs/train/dinov3_vitl16_geo.yaml', help='dino cfg file')
-    parser.add_argument('--checkpoint', type=str, default='/nethome/recpinfo/users/fibz/data/checkpoints/dinov3/ckpt/9999/consolidated_model/pytorch_model.bin', help='checkpoint file')
+    parser.add_argument('--checkpoint', type=str, default=f'{os.environ.get("CLUSTER_HOME", "/path/to/cluster_home")}/data/checkpoints/dinov3/ckpt/9999/consolidated_model/pytorch_model.bin', help='checkpoint file')
     
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

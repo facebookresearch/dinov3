@@ -99,13 +99,13 @@ def preprocess(images: list, image_size: int)-> torch.Tensor:
 
 
 if __name__ == '__main__':
-    weight_path = '/nethome/recpinfo/users/fibz/data/checkpoints/dinov3/ckpt/9999/consolidated_model/pytorch_model.bin'
+    weight_path = f'{os.environ["CLUSTER_HOME"]}/data/checkpoints/dinov3/ckpt/9999/consolidated_model/pytorch_model.bin'
     cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
     model = create_and_load_model(cfg_path, weight_path)
     dino = load_dino_head(cfg_path, weight_path)
     # print(model)
     
-    path = '/nethome/atena_projetos/fibz/data/Dataset/images/9A5EB7D9EFEC0ED9E0534EEB1D0A1100.png'
+    path = f'{os.environ["PROJECT_HOME"]}/data/Dataset/images/9A5EB7D9EFEC0ED9E0534EEB1D0A1100.png'
     img = Image.open(path).convert('RGB')
     input = resize_transform(img)
     

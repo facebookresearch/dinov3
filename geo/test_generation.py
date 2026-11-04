@@ -8,7 +8,7 @@ from dataset import ConversationDataset
 from tqdm import tqdm
 
 if __name__ == '__main__':
-    model_path = '/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/dinov3-qwen3-0.6B-longtrain'
+    model_path = f'{os.environ["CLUSTER_HOME"]}/data/checkpoints/fossil/nwpu/dinov3-qwen3-0.6B-longtrain'
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     conf = OmegaConf.load(os.path.join(model_path, 'config.yaml'))

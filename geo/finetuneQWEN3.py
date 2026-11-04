@@ -1,3 +1,4 @@
+import os
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig
@@ -12,8 +13,8 @@ if __name__ == '__main__':
     # model_name = "facebook/opt-350m"
     # tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    output_dir = '/nethome/recpinfo/users/fibz/data/checkpoint/finetuning/qwen3-0.6B-finetune'
-    dataset = '/nethome/recpinfo/users/fibz/data/dataset/publico-COMPLETO.txt'
+    output_dir = f'{os.environ["CLUSTER_HOME"]}/data/checkpoint/finetuning/qwen3-0.6B-finetune'
+    dataset = f'{os.environ["CLUSTER_HOME"]}/data/dataset/publico-COMPLETO.txt'
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, )
 

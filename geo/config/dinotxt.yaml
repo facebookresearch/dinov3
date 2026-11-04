@@ -1,9 +1,9 @@
 encoder:
   # name: 'Fossil' 
-  # weight_path: '/nethome/recpinfo/users/fibz/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
+  # weight_path: '/path/to/cluster_home/data/checkpoints/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
   # config_path: 'dinov3/configs/train/dinov3_vitl16_geo.yaml' 
   name: 'DINOtxt'
-  config_path: "/nethome/recpinfo/users/fibz/data/checkpoint/vlm-finetuning/NWPU-DINOtxt-global-large-LoRA-Seed-batch256-t25/config.yaml" 
+  config_path: "/path/to/cluster_home/data/checkpoint/vlm-finetuning/NWPU-DINOtxt-global-large-LoRA-Seed-batch256-t25/config.yaml" 
   weight_path: ""
   average_patch: false
   size: [224] # image size
@@ -26,10 +26,10 @@ train:
     learning_rate: 0.0002
     epochs: 8
 data:
-  root: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/images"
-  train: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_train_first.json"
-  val: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_val_first.json"
-  test: "/nethome/recpinfo/users/fibz/data/dataset/nwpu/conversation_test_first.json"
-save_path: "/nethome/recpinfo/users/fibz/data/checkpoints/fossil/nwpu/teste"
+  root: "/path/to/cluster_home/data/dataset/nwpu/images"
+  train: "/path/to/cluster_home/data/dataset/nwpu/conversation_train_first.json"
+  val: "/path/to/cluster_home/data/dataset/nwpu/conversation_val_first.json"
+  test: "/path/to/cluster_home/data/dataset/nwpu/conversation_test_first.json"
+save_path: "/path/to/cluster_home/data/checkpoints/fossil/nwpu/teste"
 
 # "facebook/dinov3-vitl16-pretrain-lvd1689m"

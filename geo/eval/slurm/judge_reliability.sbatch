@@ -17,12 +17,11 @@
 #SBATCH --output=logs/judge-rel-%A_%a.out
 ##SBATCH --partition=tc
 
-export HTTP_PROXY=http://$USER:$PASSWORD@inet-sys.petrobras.com.br:804
-export HTTPS_PROXY=http://$USER:$PASSWORD@inet-sys.petrobras.com.br:804
-export NO_PROXY="127.0.0.1, localhost, petrobras.com.br, petrobras.biz"
-
 . ~/.bashrc 
-conda activate cap 
+conda activate cap
+# proxy host and NO_PROXY are set in the cap env (conda env config vars); USER and PASSWORD come from the submit shell
+export HTTP_PROXY=http://$USER:$PASSWORD@${PROXY_HOST:?set PROXY_HOST in the cap env}
+export HTTPS_PROXY=$HTTP_PROXY
 
 set -euo pipefail
 

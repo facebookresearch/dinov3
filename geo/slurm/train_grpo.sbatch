@@ -18,14 +18,13 @@
 #SBATCH --output=logs/grpo-%j.out
 ##SBATCH --partition=tc
 
-export HTTP_PROXY=http://$USER:$PASSWORD@inet-sys.petrobras.com.br:804
-export HTTPS_PROXY=http://$USER:$PASSWORD@inet-sys.petrobras.com.br:804
-export NO_PROXY="127.0.0.1, localhost, petrobras.com.br, petrobras.biz"
-
 
 set -eo pipefail
 . ~/.bashrc
 conda activate cap
+# proxy host and NO_PROXY are set in the cap env (conda env config vars); USER and PASSWORD come from the submit shell
+export HTTP_PROXY=http://$USER:$PASSWORD@${PROXY_HOST:?set PROXY_HOST in the cap env}
+export HTTPS_PROXY=$HTTP_PROXY
 # The judge must already be in the HF cache (the reliability runs downloaded it). If the node has to download
 # it, copy the HTTP(S)_PROXY lines from geo/eval/slurm/judge_reliability.sbatch and drop HF_HUB_OFFLINE.
 export HF_HUB_OFFLINE=1

@@ -258,16 +258,16 @@ class DistributedDatasetBatchSampler(Sampler):
 
 if __name__ == "__main__":
     dataset1 = ConversationDataset(
-        '/nethome/atena_projetos/fvlk/data/Dataset/v4/images/', 
-        "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_train.json",
+        f'{os.environ["GEO_IMAGES"]}/', 
+        f"{os.environ['PROJECT_HOME']}/data/Dataset/v4/conv_train.json",
         groups=[2, 3],
         min_size=224,
         max_size=512
         )
     
     dataset2 = ConversationDataset(
-            '/nethome/atena_projetos/fvlk/data/Dataset/v4/images/', 
-            "/nethome/atena_projetos/fibz/data/Dataset/v4/conv_train.json",
+            f'{os.environ["GEO_IMAGES"]}/', 
+            f"{os.environ['PROJECT_HOME']}/data/Dataset/v4/conv_train.json",
             groups=[2, 3],
             min_size=512,
             )

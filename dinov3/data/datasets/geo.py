@@ -14,7 +14,7 @@ class _Split(Enum):
 
 
 def read_data(root: str, split: _Split) -> List[Dict]:
-    annotation = os.path.join('/nethome/atena_projetos/fibz/data/Dataset/v4/', f'{split.value}.csv')
+    annotation = os.path.join(f'{os.environ["PROJECT_HOME"]}/data/Dataset/v4/', f'{split.value}.csv')
     annotation = os.path.abspath(os.path.normpath(annotation))
     print(annotation)
     data = {}

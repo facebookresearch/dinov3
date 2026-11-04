@@ -170,7 +170,7 @@ class Dinotxt(Fossil):
             repo,
             'dinov3_vitl16_dinotxt_tet1280d20h24l',
             source='local',
-            weights=conf.encoder.get('dinotxt_weights', '/nethome/recpinfo/users/fibz/cache/dinov3_vitl16_dinotxt.pth'),
+            weights=conf.encoder.get('dinotxt_weights', f'{os.environ.get("CLUSTER_HOME", "/path/to/cluster_home")}/cache/dinov3_vitl16_dinotxt.pth'),
             pretrained=True
         )
         

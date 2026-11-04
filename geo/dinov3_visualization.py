@@ -126,20 +126,20 @@ if __name__ == '__main__':
     )
 
     # id = '28D9A30CCB4350A2E0636202980A1BEC'
-    # image = Image.open(f'/nethome/atena_projetos/fibz/data/Dataset/images/{id}.png')
+    # image = Image.open(f'$PROJECT_HOME/data/Dataset/images/{id}.png')
 
-    nwpu = json.load(open("/nethome/recpinfo/users/fibz/data/dataset/nwpu/val.json", "r"))
+    nwpu = json.load(open(f"{os.environ['CLUSTER_HOME']}/data/dataset/nwpu/val.json", "r"))
     i = 420
     image_name = nwpu[i]['image_name']
-    image = Image.open(f'/nethome/recpinfo/users/fibz/data/dataset/nwpu/images/{image_name.replace('\\', '/')}')
+    image = Image.open(f'{os.environ["CLUSTER_HOME"]}/data/dataset/nwpu/images/{image_name.replace('\\', '/')}')
     image_tensor = resize_transform(image)
   
-    os.makedirs(f'/nethome/recpinfo/users/fibz/data/visualize/nwpu_val_im{i}', exist_ok=True)
+    os.makedirs(f'{os.environ["CLUSTER_HOME"]}/data/visualize/nwpu_val_im{i}', exist_ok=True)
     with torch.inference_mode():
         feats = model(image_tensor.unsqueeze(0).to("cpu"))
         x = feats.last_hidden_state[0, 5:, :]
         x = x.to('cpu')
-        show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/nwpu_val_im{i}/HF_PCA.png')
+        show_pca(x, image, f'{os.environ["CLUSTER_HOME"]}/data/visualize/nwpu_val_im{i}/HF_PCA.png')
         
         for j in range(5):
             cls = feats.last_hidden_state[0, j, :]
@@ -147,12 +147,12 @@ if __name__ == '__main__':
             sufix = 'CLS' if j == 0 else f'REG{j}'
 
             print('X', x.shape, 'CLS', cls.shape)
-            show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/nwpu_val_im{i}/HF_{sufix}.png')
+            show_clssim(x, cls, image, f'{os.environ["CLUSTER_HOME"]}/data/visualize/nwpu_val_im{i}/HF_{sufix}.png')
             
 
     # LOCAL MODEL
     # Create and load locally trained model with custom heads 
-    # weight_path = '/nethome/recpinfo/users/fibz/data/checkpoint/dino/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
+    # weight_path = '$CLUSTER_HOME/data/checkpoint/dino/frozen fossil 1k/ckpt/11999/consolidated_model/pytorch_model.bin'
     # cfg_path = 'dinov3/configs/train/dinov3_vitl16_geo.yaml'
     # model = create_and_load_model(cfg_path, weight_path)
 
@@ -162,5 +162,5 @@ if __name__ == '__main__':
     #     # TODO: add option to return registers to model.foward() 
         
     # print('X', x.shape, 'CLS', cls.shape)
-    # show_pca(x, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_PCA.png')
-    # show_clssim(x, cls, image, f'/nethome/recpinfo/users/fibz/data/visualize/{id}/LOCAL_CLS.png')
+    # show_pca(x, image, f'$CLUSTER_HOME/data/visualize/{id}/LOCAL_PCA.png')
+    # show_clssim(x, cls, image, f'$CLUSTER_HOME/data/visualize/{id}/LOCAL_CLS.png')
