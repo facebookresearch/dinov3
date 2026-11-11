@@ -87,6 +87,7 @@ def _make_dinov3_linear_classifier(
         embed_dim=2 * embed_dim,
         pretrained=pretrained,
         classifier_weights=classifier_weights,
+        check_hash=check_hash,
         **kwargs,
     )
     return _LinearClassifierWrapper(backbone=backbone, linear_head=linear_head)
