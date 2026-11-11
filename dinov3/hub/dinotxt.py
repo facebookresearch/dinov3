@@ -52,7 +52,7 @@ def dinov3_vitl16_dinotxt_tet1280d20h24l(
         init_logit_bias=None,
         freeze_logit_scale=False,
     )
-    vision_backbone = dinov3_vitl16(pretrained=pretrained, weights=backbone_weights)
+    vision_backbone = dinov3_vitl16(pretrained=pretrained, weights=backbone_weights, check_hash=check_hash)
     text_backbone = TextTransformer(
         context_length=77,
         vocab_size=49408,

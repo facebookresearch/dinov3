@@ -105,6 +105,7 @@ def _make_dinov3_dpt_depther(
     backbone: torch.nn.Module = _BACKBONE_DICT[backbone_name](
         pretrained=pretrained,
         weights=backbone_weights,
+        check_hash=check_hash,
     )
 
     depther = make_depther_from_config(
@@ -177,7 +178,7 @@ def dinov3_vitl16_chmv2(
     autocast_dtype: torch.dtype = torch.float32,
     **kwargs,
 ):
-    backbone: torch.nn.Module = dinov3_vitl16(pretrained=pretrained, weights=backbone_weights)
+    backbone: torch.nn.Module = dinov3_vitl16(pretrained=pretrained, weights=backbone_weights, check_hash=check_hash)
 
     chmv2_depther = make_depther_from_config(
         backbone,
