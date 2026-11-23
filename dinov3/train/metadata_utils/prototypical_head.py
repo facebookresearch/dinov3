@@ -10,7 +10,12 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from dinov3.distributed import get_process_subgroup
+
 from .gradient_scaling import GradientScalingLayer
+
+
+_MISSING_LABEL = -1
 
 
 class PrototypicalContrastiveHead(nn.Module):
@@ -69,7 +74,7 @@ class PrototypicalContrastiveHead(nn.Module):
         self.centroid_counts.zero_()
 
     def forward(self, student_cls: Tensor, labels: Tensor, lambda_: float) -> tuple[Tensor, float]:
-        """Compute PCL loss. Does NOT update centroids (call update separately)."""
+        """Compute PCL loss and accuracy over labeled samples. Update centroids separately."""
         x = self.gradient_scaling(student_cls, lambda_)
         x_norm = F.normalize(x.float(), dim=-1)
 
@@ -77,11 +82,22 @@ class PrototypicalContrastiveHead(nn.Module):
         all_phi = self.class_concentration.detach().float().clamp(min=self.phi_min)
 
         similarities = x_norm @ all_centroids_norm.T / all_phi.unsqueeze(0)  # [B, n_classes]
-        loss = F.cross_entropy(similarities, labels)
+        loss_sum = F.cross_entropy(similarities, labels, ignore_index=_MISSING_LABEL, reduction="sum")
 
-        with torch.no_grad():
-            accuracy = (similarities.argmax(dim=1) == labels).float().mean().item()
+        valid_labels = labels != _MISSING_LABEL
+        correct = (similarities.detach().argmax(dim=1) == labels) & valid_labels
+        stats = torch.stack((valid_labels.sum(), correct.sum()))
+        group = get_process_subgroup()
+        world_size = dist.get_world_size(group) if dist.is_initialized() else 1
+        if world_size > 1:
+            dist.all_reduce(stats, group=group)
 
+        valid_count, correct_count = stats.unbind()
+        denominator = valid_count.clamp_min(1)
+        # FSDP averages gradients across ranks. Scale each local sum so the
+        # averaged gradient is the mean over all valid samples in the subgroup.
+        loss = loss_sum * (world_size / denominator)
+        accuracy = (correct_count / denominator).item()
         return loss, accuracy
 
     @torch.no_grad()
@@ -103,8 +119,12 @@ class PrototypicalContrastiveHead(nn.Module):
             dist.all_gather(all_labels, labels)
             labels = torch.cat(all_labels, dim=0)
 
-        teacher_norm = teacher_norm.float()
-        N, D = teacher_norm.shape
+        # Keep the fixed-size gather on every rank, including ranks that had
+        # no valid local labels. Filter the shared batch before indexing classes.
+        valid_labels = labels != _MISSING_LABEL
+        labels = labels[valid_labels]
+        teacher_norm = teacher_norm[valid_labels].float()
+        _, D = teacher_norm.shape
         counts = torch.bincount(labels, minlength=self.n_classes)
         valid = counts > 0
 
