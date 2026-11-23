@@ -475,11 +475,10 @@ Runnable example:
 
 ### `optim.grad_norm_normalization`
 
-When true, equalize gradient magnitudes **between guide losses** on the student
-CLS pre-head every step so no single guide dominates the others. The SSL loss
-is unaffected. Computed via `torch.autograd.grad` on an intermediate
-activation (FSDP-friendly, no second backward pass). Per-guide `loss_weight`
-is preserved on top.
+When true, equalize the **unweighted guide gradient magnitudes** on the student
+CLS pre-head, then apply each guide's effective `loss_weight`. Guides with zero
+weight do not affect the normalization target. The SSL loss is unaffected.
+The norms are computed via `torch.autograd.grad` on an intermediate activation.
 
 ### `sigreg:` (optional)
 

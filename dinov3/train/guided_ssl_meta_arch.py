@@ -207,7 +207,7 @@ class GuidedSSLMetaArch(SSLMetaArch):
         )
 
         guide_total: Tensor | float = 0.0
-        per_guide_weighted: dict[str, Tensor] = {}
+        per_guide_losses: dict[str, Tensor] = {}
         per_guide_weights: dict[str, float] = {}
         if self.cfg.guide.enabled and self.guide_heads:
             metadata = data.get("metadata")
@@ -227,13 +227,11 @@ class GuidedSSLMetaArch(SSLMetaArch):
             loss_dict.update(guide_loss_dict)
             for guide_cfg in self.guide_configs:
                 name = guide_cfg.name
-                weighted_key = f"guide_{name}_weighted"
-                if weighted_key not in guide_loss_dict:
+                guide_loss = guide_loss_dict.get(f"guide_{name}_loss")
+                if not isinstance(guide_loss, Tensor):
                     continue
-                weighted_value = guide_loss_dict[weighted_key]
-                if not isinstance(weighted_value, Tensor):
-                    continue
-                per_guide_weighted[name] = weighted_value
+                weighted_value = guide_loss_dict[f"guide_{name}_weighted"]
+                per_guide_losses[name] = guide_loss
                 per_guide_weights[name] = (
                     guide_cfg.loss_weight / 10.0 if guide_cfg.grl else guide_cfg.loss_weight
                 )
@@ -244,11 +242,11 @@ class GuidedSSLMetaArch(SSLMetaArch):
         grad_norm_enabled = getattr(self.cfg.optim, "grad_norm_normalization", False)
         if (
             grad_norm_enabled
-            and len(per_guide_weighted) >= 2
+            and len(per_guide_losses) >= 2
             and isinstance(base_loss, Tensor)
         ):
             guide_contribution = self._apply_grad_norm_normalization(
-                per_guide_weighted=per_guide_weighted,
+                per_guide_losses=per_guide_losses,
                 per_guide_weights=per_guide_weights,
                 backbone_output=student_global["cls_pre_head"],
                 loss_dict=loss_dict,
@@ -261,34 +259,32 @@ class GuidedSSLMetaArch(SSLMetaArch):
 
         return base_loss, metrics_dict | loss_dict
 
+    @staticmethod
     def _apply_grad_norm_normalization(
-        self,
-        per_guide_weighted: dict[str, Tensor],
+        per_guide_losses: dict[str, Tensor],
         per_guide_weights: dict[str, float],
         backbone_output: Tensor,
         loss_dict: dict[str, Tensor | float],
     ) -> Tensor:
         """Equalize gradient magnitudes *between* the individual guide losses.
 
-        Each guide's contribution is rescaled so its gradient w.r.t. the student
-        CLS pre-head matches the geometric mean of all guide gradient norms,
-        preventing any single guide from dominating. The SSL loss is not part
-        of this normalization. Per-guide ``loss_weight`` (already baked into
-        ``per_guide_weighted``) is preserved as a multiplier on top of the
-        normalized contribution.
+        The unweighted guide gradients w.r.t. the student CLS pre-head are
+        rescaled to their geometric mean norm. The configured weights then
+        control the relative contributions. The SSL loss is not part of this
+        normalization.
 
         Uses ``torch.autograd.grad`` on an intermediate activation (not a
         sharded parameter) so it stays FSDP-safe.
         """
-        names = list(per_guide_weighted.keys())
+        weighted_losses = {name: loss * per_guide_weights[name] for name, loss in per_guide_losses.items()}
         device = backbone_output.device
         eps = 1e-6
 
         norms: dict[str, Tensor] = {}
-        for name in names:
-            grad = torch.autograd.grad(
-                per_guide_weighted[name], backbone_output, retain_graph=True, allow_unused=True
-            )[0]
+        for name, loss in per_guide_losses.items():
+            grad = None
+            if per_guide_weights[name] != 0.0:
+                grad = torch.autograd.grad(loss, backbone_output, retain_graph=True, allow_unused=True)[0]
             norm = (
                 grad.float().norm()
                 if grad is not None
@@ -298,29 +294,21 @@ class GuidedSSLMetaArch(SSLMetaArch):
             loss_dict[f"grad_norm/{name}"] = norm
 
         # Geometric mean target across guides with non-vanishing gradients.
-        valid_norms = [norms[n] for n in names if float(norms[n]) > eps]
+        valid_norms = [norm for norm in norms.values() if float(norm) > eps]
         if len(valid_norms) < 2:
             # Nothing meaningful to equalize against; fall back to plain sum.
-            return sum(per_guide_weighted.values())
+            return sum(weighted_losses.values())
 
         log_sum = sum(torch.log(n + 1e-12) for n in valid_norms)
         target_norm = torch.exp(log_sum / len(valid_norms))
         loss_dict["grad_norm/target"] = target_norm
 
         contribution: Tensor | float = 0.0
-        for name in names:
+        for name, weighted in weighted_losses.items():
             norm = norms[name]
-            weighted = per_guide_weighted[name]
-            weight = per_guide_weights.get(name, 1.0)
-            if float(norm) < eps or weight == 0.0:
-                scale = torch.tensor(1.0, device=device)
-                normalized = weighted
-            else:
-                # Strip the original weight, equalize, then reapply the weight.
-                scale = target_norm / (norm + 1e-8)
-                normalized = weight * (scale * (weighted / weight))
+            scale = target_norm / (norm + 1e-8) if float(norm) > eps else torch.tensor(1.0, device=device)
             loss_dict[f"grad_norm/{name}_scale"] = scale
-            contribution = normalized if isinstance(contribution, float) else contribution + normalized
+            contribution = contribution + scale * weighted
 
         return contribution
 
