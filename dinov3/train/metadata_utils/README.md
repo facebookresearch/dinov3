@@ -109,6 +109,11 @@ guide:
         output_max: [1.8]
 ```
 
+Prototypical guides treat labels equal to `-1` as missing metadata. These
+samples still contribute to the SSL objective. The guide's loss and accuracy
+are normalized by valid labels across the training subgroup, and only labeled
+teacher embeddings update the centroids.
+
 Adversarial debiasing: set `grl: true`; lambda flips sign during backward and
 `loss_weight` is divided by 10 to keep the adversarial signal from dominating
 SSL.
